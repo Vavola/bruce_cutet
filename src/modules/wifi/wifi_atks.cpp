@@ -12,7 +12,6 @@
 #include "core/wifi/wifi_common.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
-#include "evil_portal.h"
 #include "sniffer.h"
 #include "vector"
 #include <Arduino.h>
@@ -641,14 +640,14 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
 void target_atk_menu(String tssid, String mac, uint8_t channel) {
 AGAIN:
     options = {
-        {"Information",         [=]() { wifi_atk_info(tssid, mac, channel); }      },
-        {"Deauth",              [=]() { target_atk(tssid, mac, channel); }         },
-        {"Capture Handshake",   [=]() { capture_handshake(tssid, mac, channel); }  },
-        {"Clone Portal",        [=]() { EvilPortal(tssid, channel, false, false); }},
-        {"Deauth+Clone",        [=]() { EvilPortal(tssid, channel, true, false); } },
-        {"Deauth+Clone+Verify",
-         [=]() // New WiFi Attack
-         { EvilPortal(tssid, channel, true, true); }                               },
+        {"Information",       [=]() { wifi_atk_info(tssid, mac, channel); }    },
+        {"Deauth",            [=]() { target_atk(tssid, mac, channel); }       },
+        {"Capture Handshake", [=]() { capture_handshake(tssid, mac, channel); }},
+        //{"Clone Portal",        [=]() { EvilPortal(tssid, channel, false, false); }},
+        //{"Deauth+Clone",        [=]() { EvilPortal(tssid, channel, true, false); } },
+        //{"Deauth+Clone+Verify",
+        // [=]() // New WiFi Attack
+        // { EvilPortal(tssid, channel, true, true); }                               },
     };
     addOptionToMainMenu();
 

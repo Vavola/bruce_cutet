@@ -12,7 +12,6 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "lwip/err.h"
-#include "modules/wifi/evil_portal.h"
 #include "nvs_flash.h"
 #include <set>
 #include <vector>
@@ -354,7 +353,8 @@ void karma_setup() {
                                                          esp_wifi_stop();
                                                          esp_wifi_deinit(); // Critical for clean restart
                                                          delay(500);
-                                                         EvilPortal(probe.ssid, probe.channel, false, false);
+                                                         // EvilPortal(probe.ssid, probe.channel, false,
+                                                         // false);
                                                          wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
                                                          esp_wifi_init(&cfg);
                                                          esp_wifi_set_mode(WIFI_MODE_NULL);
