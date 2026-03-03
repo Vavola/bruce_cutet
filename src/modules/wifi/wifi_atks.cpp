@@ -413,15 +413,16 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
         }
     }
 
-    // Sanitize SSID for use in filename
+    // Sanitize SSID for use in filename (Soft sanitization for Cyrillic support)
     String sanitizedSsid = "";
     for (size_t i = 0; i < tssid.length() && i < 32; ++i) {
         char c = tssid[i];
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.') {
-            sanitizedSsid += c;
-        } else {
+        // Вырезаем только те символы, которые запрещены при создании файлов
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' ||
+            c == '|') {
             sanitizedSsid += '_';
+        } else {
+            sanitizedSsid += c;
         }
     }
     // If SSID was hidden/empty, use BSSID appended to filename so it's unique and descriptive
