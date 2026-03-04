@@ -183,13 +183,9 @@ void ConfigMenu::systemMenu() {
 void ConfigMenu::advancedMenu() {
     while (true) {
         std::vector<Option> localOptions = {
-#if !defined(LITE_VERSION)
-            {"Toggle BLE API", [this]() { enableBLEAPI(); }       },
-            {"BadUSB/BLE",     [this]() { setBadUSBBLEMenu(); }   },
-#endif
-            {"Network Creds",  [this]() { setNetworkCredsMenu(); }},
+            {"Network Creds", [this]() { setNetworkCredsMenu(); }},
             {"Factory Reset",
-                                      []() {
+             []() {
                  // Confirmation dialog for destructive action
                  drawMainBorder(true);
                  int8_t choice = displayMessage(
@@ -206,8 +202,8 @@ void ConfigMenu::advancedMenu() {
                      bruceConfig.factoryReset(); // Restarts ESP
                  }
                  // If cancelled, loop continues and menu rebuilds
-             }                                                                             },
-            {"Back",           []() {}                            },
+             }                                                   },
+            {"Back",          []() {}                            },
         };
 
         int selected = loopOptions(localOptions, MENU_TYPE_SUBMENU, "Advanced");
