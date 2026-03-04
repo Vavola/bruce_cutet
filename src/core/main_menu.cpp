@@ -6,23 +6,7 @@
 MainMenu::MainMenu() {
     _menuItems = {
         &wifiMenu,
-        &bleMenu,
-#if !defined(LITE_VERSION)
-        &ethernetMenu,
-#endif
-        &rfMenu,
-        &rfidMenu,
-        &irMenu,
         &fileMenu,
-        &gpsMenu,
-#if !defined(LITE_VERSION)
-        &loraMenu,
-#endif
-        &othersMenu,
-        &clockMenu,
-#if !defined(LITE_VERSION)
-        &connectMenu,
-#endif
         &configMenu,
     };
     _totalItems = _menuItems.size();

@@ -77,7 +77,7 @@ extern StartupApp startupApp;
 
 extern char timeStr[12];
 extern SPIClass sdcardSPI;
-extern SPIClass CC_NRF_SPI;
+
 extern bool clock_set;
 extern time_t localTime;
 extern struct tm *timeInfo;
@@ -95,8 +95,6 @@ extern volatile int tftWidth;
 extern volatile int tftHeight;
 
 extern String wifiIP;
-
-extern bool BLEConnected; // inform if BLE is active or not
 
 extern bool gpsConnected; // inform if GPS is active or not
 

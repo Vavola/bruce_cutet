@@ -308,9 +308,7 @@ void ConfigMenu::switchToUARTSerial() {
     if (bruceConfigPins.CC1101_bus.checkConflict(bruceConfigPins.uart_bus.rx) ||
         bruceConfigPins.CC1101_bus.checkConflict(bruceConfigPins.uart_bus.tx) ||
         bruceConfigPins.NRF24_bus.checkConflict(bruceConfigPins.uart_bus.rx) ||
-        bruceConfigPins.NRF24_bus.checkConflict(bruceConfigPins.uart_bus.tx)) {
-        CC_NRF_SPI.end();
-    }
+        bruceConfigPins.NRF24_bus.checkConflict(bruceConfigPins.uart_bus.tx)) {}
 
     // Configure UART pins and switch serial output
     pinMode(bruceConfigPins.uart_bus.rx, INPUT);

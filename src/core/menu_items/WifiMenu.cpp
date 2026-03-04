@@ -1,12 +1,10 @@
 #include "WifiMenu.h"
 #include "core/display.h"
-#include <esp_netif.h>
 #include "core/settings.h"
 #include "core/utils.h"
 #include "core/wifi/wg.h"
 #include "core/wifi/wifi_common.h"
 #include "core/wifi/wifi_mac.h"
-#include "modules/ethernet/ARPScanner.h"
 #include "modules/wifi/ap_info.h"
 #include "modules/wifi/clients.h"
 #include "modules/wifi/karma_attack.h"
@@ -14,6 +12,7 @@
 #include "modules/wifi/scan_hosts.h"
 #include "modules/wifi/sniffer.h"
 #include "modules/wifi/wifi_atks.h"
+#include <esp_netif.h>
 
 #ifndef LITE_VERSION
 #include "modules/wifi/wifi_recover.h"
@@ -41,7 +40,7 @@ void WifiMenu::optionsMenu() {
         options.push_back({"AP info", displayAPInfo});
     }
     options.push_back({"Wifi Atks", wifi_atk_menu});
-    
+
 #ifndef LITE_VERSION
     options.push_back({"Listen TCP", listenTcpPort});
     options.push_back({"Client TCP", clientTCP});
@@ -59,19 +58,19 @@ void WifiMenu::optionsMenu() {
                            if (!wifiConnected) doScan = wifiConnectMenu();
 
                            if (doScan) {
-                               esp_netif_t *esp_netinterface = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                               esp_netif_t *esp_netinterface =
+                                   esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
                                if (esp_netinterface == nullptr) {
                                    Serial.println("Failed to get netif handle");
                                    return;
                                }
-                               ARPScanner{esp_netinterface};
                            }
                        }});
     options.push_back({"Wireguard", wg_setup});
     options.push_back({"Responder", responder});
     options.push_back({"WiFi Pass Recovery", wifi_recover_menu});
 #endif
-    
+
     options.push_back({"Config", [this]() { configMenu(); }});
     addOptionToMainMenu();
     loopOptions(options, MENU_TYPE_SUBMENU, "WiFi");
@@ -99,6 +98,24 @@ void WifiMenu::drawIcon(float scale) {
     int deltaY = scale * 20;
     int radius = scale * 6;
     tft.fillCircle(iconCenterX, iconCenterY + deltaY, radius, bruceConfig.priColor);
-    tft.drawArc(iconCenterX, iconCenterY + deltaY, deltaY + radius, deltaY, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
-    tft.drawArc(iconCenterX, iconCenterY + deltaY, 2 * deltaY + radius, 2 * deltaY, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.drawArc(
+        iconCenterX,
+        iconCenterY + deltaY,
+        deltaY + radius,
+        deltaY,
+        130,
+        230,
+        bruceConfig.priColor,
+        bruceConfig.bgColor
+    );
+    tft.drawArc(
+        iconCenterX,
+        iconCenterY + deltaY,
+        2 * deltaY + radius,
+        2 * deltaY,
+        130,
+        230,
+        bruceConfig.priColor,
+        bruceConfig.bgColor
+    );
 }

@@ -1,13 +1,8 @@
 #include "sd_functions.h"
 #include "display.h" // using displayRedStripe as error msg
-#include "modules/gps/wigle.h"
-#include "modules/ir/TV-B-Gone.h"
-#include "modules/ir/custom_ir.h"
-#include "modules/others/audio.h"
 #if defined(HAS_NS4168_SPKR)
 #include "modules/others/audio_player.h"
 #endif
-#include "modules/rf/rf_send.h"
 #include "mykeyboard.h" // using keyboard when calling rename
 #include "passwords.h"
 #include "scrollableTextArea.h"

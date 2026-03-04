@@ -27,7 +27,7 @@ SPIClass sdcardSPI;
 #ifndef VSPI
 #define VSPI FSPI
 #endif
-SPIClass CC_NRF_SPI(VSPI);
+
 #else
 SPIClass CC_NRF_SPI(HSPI);
 #endif
@@ -90,14 +90,12 @@ unsigned long previousMillis = millis();
 int prog_handler; // 0 - Flash, 1 - LittleFS, 3 - Download
 String cachedPassword = "";
 bool sdcardMounted = false;
-bool gpsConnected = false;
 
 // wifi globals
 // TODO put in a namespace
 bool wifiConnected = false;
 String wifiIP;
 
-bool BLEConnected = false;
 bool returnToMenu;
 bool isSleeping = false;
 bool isScreenOff = false;
@@ -146,8 +144,7 @@ volatile int tftHeight = VECTOR_DISPLAY_DEFAULT_WIDTH;
 #include "core/serialcmds.h"
 #include "core/settings.h"
 #include "core/wifi/wifi_common.h"
-#include "modules/others/audio.h" // for playAudioFile
-#include "modules/rf/rf_utils.h"  // for initCC1101once
+
 #include <Wire.h>
 
 /*********************************************************************
@@ -186,18 +183,6 @@ void setup_gpio() {
 
     // Smoochiee v2 uses a AW9325 tro control GPS, MIC, Vibro and CC1101 RX/TX powerlines
     ioExpander.init(IO_EXPANDER_ADDRESS, &Wire);
-
-#if TFT_MOSI > 0
-    if (bruceConfigPins.CC1101_bus.mosi == (gpio_num_t)TFT_MOSI)
-        initCC1101once(&tft.getSPIinstance()); // (T_EMBED), CORE2 and others
-    else
-#endif
-        if (bruceConfigPins.CC1101_bus.mosi == bruceConfigPins.SDCARD_bus.mosi)
-        initCC1101once(&sdcardSPI); // (ARDUINO_M5STACK_CARDPUTER) and (ESP32S3DEVKITC1) and devices that
-                                    // share CC1101 pin with only SDCard
-    else initCC1101once(NULL);
-    // (ARDUINO_M5STICK_C_PLUS) || (ARDUINO_M5STICK_C_PLUS2) and others that doesn´t share SPI with
-    // other devices (need to change it when Bruce board comes to shore)
 }
 
 /*********************************************************************
