@@ -6,7 +6,7 @@
 #include <JPEGDecoder.h>
 #include <interface.h> //for charging ischarging to print charging indicator
 #include <memory>
-
+#include <new>
 #define MAX_MENU_SIZE (int)(tftHeight / 25)
 
 // Send the ST7789 into or out of sleep mode
@@ -806,822 +806,817 @@ void drawStatusBar() {
             tft.print("BRUCE " + String(BRUCE_VERSION));
         }
     }
-    void drawMainBorder(bool clear) {
-        if (clear) {
-            tft.drawPixel(0, 0, 0);
-            tft.fillScreen(bruceConfig.bgColor);
-        }
-        setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
-        tft.setTextDatum(0);
+}
+void drawMainBorder(bool clear) {
+    if (clear) {
+        tft.drawPixel(0, 0, 0);
+        tft.fillScreen(bruceConfig.bgColor);
+    }
+    setTftDisplay(12, 12, bruceConfig.priColor, 1, bruceConfig.bgColor);
+    tft.setTextDatum(0);
 
-        // if(wifiConnected) {tft.print(timeStr);} else {tft.print("BRUCE 1.0b");}
+    // if(wifiConnected) {tft.print(timeStr);} else {tft.print("BRUCE 1.0b");}
 
-        drawStatusBar();
+    drawStatusBar();
 
 #if defined(HAS_TOUCH)
-        TouchFooter();
+    TouchFooter();
 #endif
+}
+
+void drawMainBorderWithTitle(String title, bool clear) {
+    drawMainBorder(clear);
+    printTitle(title);
+}
+
+void printTitle(String title) {
+    tft.setCursor((tftWidth - (title.length() * FM * LW)) / 2, BORDER_PAD_Y);
+    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+    tft.setTextSize(FM);
+
+    title.toUpperCase();
+    tft.println(title);
+
+    tft.setTextSize(FP);
+}
+
+void printSubtitle(String subtitle, bool withLine) {
+    int16_t cursorX = (tftWidth - (subtitle.length() * FP * LW)) / 2;
+    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+    tft.setTextSize(FP);
+
+    tft.setCursor(cursorX, BORDER_PAD_Y + FM * LH);
+    tft.println(subtitle);
+
+    if (withLine) {
+        String line = "";
+        for (byte i = 0; i < subtitle.length(); i++) line += "-";
+
+        tft.setCursor(cursorX, tft.getCursorY());
+        tft.println(line);
     }
+}
 
-    void drawMainBorderWithTitle(String title, bool clear) {
-        drawMainBorder(clear);
-        printTitle(title);
+void printFootnote(String text) {
+    tft.setTextSize(FP);
+    tft.drawRightString(text, tftWidth - BORDER_PAD_X, tftHeight - BORDER_PAD_X - FP * LH, SMOOTH_FONT);
+}
+
+void printCenterFootnote(String text) {
+    tft.fillRect(10, tftHeight - BORDER_PAD_X - FP * LH, tftWidth - 20, FP * LH, bruceConfig.bgColor);
+    tft.setTextSize(FP);
+    tft.drawCentreString(text, tftWidth / 2, tftHeight - BORDER_PAD_X - FP * LH, SMOOTH_FONT);
+}
+
+/***************************************************************************************
+** Function name: drawBatteryStatus()
+** Description:   Draws battery info into the Status bar
+***************************************************************************************/
+void drawBatteryStatus(uint8_t bat) {
+    if (bat == 0) return;
+
+    bool charging = isCharging();
+
+    uint16_t color = bruceConfig.priColor;
+    uint16_t barcolor = bruceConfig.priColor;
+    if (bat < 16) barcolor = color = TFT_RED;
+    else if (bat < 34) barcolor = color = TFT_YELLOW;
+    if (charging) color = TFT_GREEN;
+
+    tft.drawRoundRect(tftWidth - 43, 6, 36, 19, 2, charging ? color : bruceConfig.bgColor); // (bolder border)
+    tft.drawRoundRect(tftWidth - 42, 7, 34, 17, 2, color);
+    tft.setTextSize(FP);
+    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
+    tft.drawRightString((bat == 100 ? "" : " ") + String(bat) + "%", tftWidth - 45, 12, 1);
+    tft.fillRoundRect(tftWidth - 40, 9, 30 * bat / 100, 13, 2, barcolor);
+    tft.drawLine(tftWidth - 30, 9, tftWidth - 30, 9 + 13, bruceConfig.bgColor);
+    tft.drawLine(tftWidth - 20, 9, tftWidth - 20, 9 + 13, bruceConfig.bgColor);
+}
+/***************************************************************************************
+** Function name: drawWireguardStatus()
+** Description:   Draws a padlock when connected
+***************************************************************************************/
+void drawWireguardStatus(int x, int y) {
+    tft.fillRect(x, y, 20, 17, bruceConfig.bgColor);
+    if (isConnectedWireguard) {
+        tft.drawRoundRect(11 + x, 0 + y, 8, 12, 5, TFT_GREEN);
+        tft.fillRoundRect(10 + x, 8 + y, 10, 8, 0, TFT_GREEN);
+    } else {
+        tft.drawRoundRect(1 + x, 0 + y, 8, 12, 5, bruceConfig.priColor);
+        tft.fillRoundRect(0 + x, 8 + y, 10, 8, 0, bruceConfig.bgColor);
+        tft.fillRoundRect(6 + x, 8 + y, 10, 10, 0, bruceConfig.priColor);
     }
-
-    void printTitle(String title) {
-        tft.setCursor((tftWidth - (title.length() * FM * LW)) / 2, BORDER_PAD_Y);
-        tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-        tft.setTextSize(FM);
-
-        title.toUpperCase();
-        tft.println(title);
-
-        tft.setTextSize(FP);
-    }
-
-    void printSubtitle(String subtitle, bool withLine) {
-        int16_t cursorX = (tftWidth - (subtitle.length() * FP * LW)) / 2;
-        tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-        tft.setTextSize(FP);
-
-        tft.setCursor(cursorX, BORDER_PAD_Y + FM * LH);
-        tft.println(subtitle);
-
-        if (withLine) {
-            String line = "";
-            for (byte i = 0; i < subtitle.length(); i++) line += "-";
-
-            tft.setCursor(cursorX, tft.getCursorY());
-            tft.println(line);
-        }
-    }
-
-    void printFootnote(String text) {
-        tft.setTextSize(FP);
-        tft.drawRightString(text, tftWidth - BORDER_PAD_X, tftHeight - BORDER_PAD_X - FP * LH, SMOOTH_FONT);
-    }
-
-    void printCenterFootnote(String text) {
-        tft.fillRect(10, tftHeight - BORDER_PAD_X - FP * LH, tftWidth - 20, FP * LH, bruceConfig.bgColor);
-        tft.setTextSize(FP);
-        tft.drawCentreString(text, tftWidth / 2, tftHeight - BORDER_PAD_X - FP * LH, SMOOTH_FONT);
-    }
-
-    /***************************************************************************************
-    ** Function name: drawBatteryStatus()
-    ** Description:   Draws battery info into the Status bar
-    ***************************************************************************************/
-    void drawBatteryStatus(uint8_t bat) {
-        if (bat == 0) return;
-
-        bool charging = isCharging();
-
-        uint16_t color = bruceConfig.priColor;
-        uint16_t barcolor = bruceConfig.priColor;
-        if (bat < 16) barcolor = color = TFT_RED;
-        else if (bat < 34) barcolor = color = TFT_YELLOW;
-        if (charging) color = TFT_GREEN;
-
-        tft.drawRoundRect(
-            tftWidth - 43, 6, 36, 19, 2, charging ? color : bruceConfig.bgColor
-        ); // (bolder border)
-        tft.drawRoundRect(tftWidth - 42, 7, 34, 17, 2, color);
-        tft.setTextSize(FP);
-        tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-        tft.drawRightString((bat == 100 ? "" : " ") + String(bat) + "%", tftWidth - 45, 12, 1);
-        tft.fillRoundRect(tftWidth - 40, 9, 30 * bat / 100, 13, 2, barcolor);
-        tft.drawLine(tftWidth - 30, 9, tftWidth - 30, 9 + 13, bruceConfig.bgColor);
-        tft.drawLine(tftWidth - 20, 9, tftWidth - 20, 9 + 13, bruceConfig.bgColor);
-    }
-    /***************************************************************************************
-    ** Function name: drawWireguardStatus()
-    ** Description:   Draws a padlock when connected
-    ***************************************************************************************/
-    void drawWireguardStatus(int x, int y) {
-        tft.fillRect(x, y, 20, 17, bruceConfig.bgColor);
-        if (isConnectedWireguard) {
-            tft.drawRoundRect(11 + x, 0 + y, 8, 12, 5, TFT_GREEN);
-            tft.fillRoundRect(10 + x, 8 + y, 10, 8, 0, TFT_GREEN);
-        } else {
-            tft.drawRoundRect(1 + x, 0 + y, 8, 12, 5, bruceConfig.priColor);
-            tft.fillRoundRect(0 + x, 8 + y, 10, 8, 0, bruceConfig.bgColor);
-            tft.fillRoundRect(6 + x, 8 + y, 10, 10, 0, bruceConfig.priColor);
-        }
-    }
+}
 
 /***************************************************************************************
 ** Function name: listFiles
 ** Description:   Função para desenhar e mostrar o menu principal
 ***************************************************************************************/
 #define MAX_ITEMS (int)(tftHeight - 20) / (LH * FM)
-    Opt_Coord listFiles(int index, std::vector<FileList> fileList) {
-        Opt_Coord coord;
-        tft.drawPixel(0, 0, bruceConfig.bgColor);
-        if (index == 0) {
-            tft.fillScreen(bruceConfig.bgColor);
-            tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
+Opt_Coord listFiles(int index, std::vector<FileList> fileList) {
+    Opt_Coord coord;
+    tft.drawPixel(0, 0, bruceConfig.bgColor);
+    if (index == 0) {
+        tft.fillScreen(bruceConfig.bgColor);
+        tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
+    }
+    tft.setCursor(10, 10);
+    tft.setTextSize(FM);
+    int i = 0;
+    int arraySize = fileList.size();
+    int start = 0;
+    if (index >= MAX_ITEMS) {
+        start = index - MAX_ITEMS + 1;
+        if (start < 0) start = 0;
+    }
+    int nchars = (tftWidth - 20) / (6 * tft.getTextSize());
+    String txt = ">";
+    while (i < arraySize) {
+        if (i >= start) {
+            tft.setCursor(10, tft.getCursorY());
+            if (fileList[i].folder == true)
+                tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
+            else if (fileList[i].operation == true) tft.setTextColor(ALCOLOR, bruceConfig.bgColor);
+            else { tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor); }
+
+            if (index == i) {
+                txt = ">";
+                coord.x = 10 + FM * LW;
+                coord.y = tft.getCursorY();
+                coord.size = nchars;
+                coord.fgcolor =
+                    fileList[i].folder ? getColorVariation(bruceConfig.priColor) : bruceConfig.priColor;
+                coord.bgcolor = bruceConfig.bgColor;
+            } else txt = " ";
+            txt += fileList[i].filename + "                 ";
+            tft.println(txt.substring(0, nchars));
         }
-        tft.setCursor(10, 10);
-        tft.setTextSize(FM);
-        int i = 0;
-        int arraySize = fileList.size();
-        int start = 0;
-        if (index >= MAX_ITEMS) {
-            start = index - MAX_ITEMS + 1;
-            if (start < 0) start = 0;
-        }
-        int nchars = (tftWidth - 20) / (6 * tft.getTextSize());
-        String txt = ">";
-        while (i < arraySize) {
-            if (i >= start) {
-                tft.setCursor(10, tft.getCursorY());
-                if (fileList[i].folder == true)
-                    tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
-                else if (fileList[i].operation == true) tft.setTextColor(ALCOLOR, bruceConfig.bgColor);
-                else { tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor); }
-
-                if (index == i) {
-                    txt = ">";
-                    coord.x = 10 + FM * LW;
-                    coord.y = tft.getCursorY();
-                    coord.size = nchars;
-                    coord.fgcolor =
-                        fileList[i].folder ? getColorVariation(bruceConfig.priColor) : bruceConfig.priColor;
-                    coord.bgcolor = bruceConfig.bgColor;
-                } else txt = " ";
-                txt += fileList[i].filename + "                 ";
-                tft.println(txt.substring(0, nchars));
-            }
-            i++;
-            if (i == (start + MAX_ITEMS) || i == arraySize) break;
-        }
-        return coord;
+        i++;
+        if (i == (start + MAX_ITEMS) || i == arraySize) break;
     }
+    return coord;
+}
 
-    // desenhos do menu principal, sprite "draw" com 80x80 pixels
+// desenhos do menu principal, sprite "draw" com 80x80 pixels
 
-    void drawWifiSmall(int x, int y) {
-        tft.fillRect(x, y, 16, 16, bruceConfig.bgColor);
-        tft.fillCircle(9 + x, 14 + y, 1, bruceConfig.priColor);
-        tft.drawArc(9 + x, 14 + y, 4, 6, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
-        tft.drawArc(9 + x, 14 + y, 10, 12, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
+void drawWifiSmall(int x, int y) {
+    tft.fillRect(x, y, 16, 16, bruceConfig.bgColor);
+    tft.fillCircle(9 + x, 14 + y, 1, bruceConfig.priColor);
+    tft.drawArc(9 + x, 14 + y, 4, 6, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.drawArc(9 + x, 14 + y, 10, 12, 130, 230, bruceConfig.priColor, bruceConfig.bgColor);
+}
+
+void drawBLESmall(int x, int y) {
+    tft.fillRect(x, 2 + y, 17, 13, bruceConfig.bgColor);
+    tft.drawWideLine(8 + x, 8 + y, 4 + x, 5 + y, 2, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.drawWideLine(8 + x, 8 + y, 4 + x, 13 + y, 2, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.drawTriangle(8 + x, 8 + y, 8 + x, 2 + y, 13 + x, 5 + y, bruceConfig.priColor);
+    tft.drawTriangle(8 + x, 8 + y, 8 + x, 14 + y, 13 + x, 11 + y, bruceConfig.priColor);
+}
+
+void drawBLE_beacon(int x, int y, uint16_t color) {
+    tft.fillRect(x, y, 40, 80, bruceConfig.bgColor);
+    tft.drawWideLine(40 + x, 53 + y, 2 + x, 26 + y, 5, color, bruceConfig.bgColor);
+    tft.drawWideLine(40 + x, 26 + y, 2 + x, 53 + y, 5, color, bruceConfig.bgColor);
+    tft.drawWideLine(40 + x, 53 + y, 20 + x, 68 + y, 5, color, bruceConfig.bgColor);
+    tft.drawWideLine(40 + x, 26 + y, 20 + x, 12 + y, 5, color, bruceConfig.bgColor);
+    tft.drawWideLine(20 + x, 12 + y, 20 + x, 68 + y, 5, color, bruceConfig.bgColor);
+    tft.fillTriangle(40 + x, 26 + y, 20 + x, 40 + y, 20 + x, 12 + y, color);
+    tft.fillTriangle(40 + x, 53 + y, 20 + x, 40 + y, 20 + x, 68 + y, color);
+}
+
+void drawGPS(int x, int y) {
+    tft.fillRect(x, y, 80, 80, bruceConfig.bgColor);
+    tft.drawEllipse(40 + x, 70 + y, 15, 8, bruceConfig.priColor);
+    tft.drawArc(40 + x, 25 + y, 23, 7, 0, 340, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.fillTriangle(40 + x, 70 + y, 20 + x, 64 + y, 60 + x, 64 + y, bruceConfig.priColor);
+}
+
+void drawGpsSmall(int x, int y) {
+    tft.fillRect(x, y, 17, 17, bruceConfig.bgColor);
+    tft.drawEllipse(9 + x, 14 + y, 4, 3, bruceConfig.priColor);
+    tft.drawArc(9 + x, 6 + y, 5, 2, 0, 340, bruceConfig.priColor, bruceConfig.bgColor);
+    tft.fillTriangle(9 + x, 15 + y, 5 + x, 9 + y, 13 + x, 9 + y, bruceConfig.priColor);
+}
+
+void drawCreditCard(int x, int y) {
+    tft.fillRect(x, y, 70, 50, bruceConfig.bgColor);
+    tft.fillRoundRect(x + 5, y + 5, 60, 40, 5, bruceConfig.priColor);
+    tft.fillRect(x + 5, y + 15, 60, 10, getColorVariation(bruceConfig.priColor, 3, -1));
+    tft.fillRect(x + 10, y + 30, 12, 10, getColorVariation(bruceConfig.priColor, 3, 1));
+    tft.drawRect(x + 10, y + 30, 12, 10, getColorVariation(bruceConfig.priColor, 5, -1));
+    tft.drawRect(x + 10 + 4, y + 30, 4, 10, getColorVariation(bruceConfig.priColor, 5, -1));
+    tft.drawRect(x + 10, y + 33, 5, 4, getColorVariation(bruceConfig.priColor, 5, -1));
+    tft.drawRect(x + 17, y + 33, 5, 4, getColorVariation(bruceConfig.priColor, 5, -1));
+    tft.fillRect(x + 30, y + 35, 30, 5, getColorVariation(bruceConfig.priColor, 5, 1));
+}
+
+void drawMfkey32Icon(int x, int y) {
+    tft.drawRect(x + 2, y + 15, 24, 40, bruceConfig.priColor);
+    tft.drawRect(x + 5, y + 18, 18, 12, bruceConfig.priColor);
+    tft.drawRect(x + 5, y + 34, 18, 18, bruceConfig.priColor);
+    tft.drawLine(x + 5, y + 40, x + 22, y + 40, bruceConfig.priColor);
+    tft.drawLine(x + 5, y + 46, x + 22, y + 46, bruceConfig.priColor);
+    tft.drawLine(x + 11, y + 34, x + 11, y + 51, bruceConfig.priColor);
+    tft.drawLine(x + 17, y + 34, x + 17, y + 51, bruceConfig.priColor);
+    tft.drawRect(x + 30, y + 10, 25, 35, bruceConfig.priColor);
+    int startX = x + 32;
+    int startY = y + 12;
+    int endX = x + 52;
+    int endY = y + 32;
+    int step = 2;
+    int turns = 0;
+
+    while (startX <= endX && startY <= endY && turns < 3) {
+        for (int i = startX; i <= endX; i++) { tft.drawPixel(i, startY, bruceConfig.priColor); }
+        startY += step;
+        for (int i = startY; i <= endY; i++) { tft.drawPixel(endX, i, bruceConfig.priColor); }
+        endX -= step;
+        for (int i = endX; i >= startX; i--) { tft.drawPixel(i, endY, bruceConfig.priColor); }
+        endY -= step;
+        for (int i = endY; i >= startY; i--) { tft.drawPixel(startX, i, bruceConfig.priColor); }
+        startX += step;
+        turns++;
     }
+    tft.fillRect(x + 40, y + 36, 6, 6, getColorVariation(bruceConfig.priColor, 3, 1));
+}
 
-    void drawBLESmall(int x, int y) {
-        tft.fillRect(x, 2 + y, 17, 13, bruceConfig.bgColor);
-        tft.drawWideLine(8 + x, 8 + y, 4 + x, 5 + y, 2, bruceConfig.priColor, bruceConfig.bgColor);
-        tft.drawWideLine(8 + x, 8 + y, 4 + x, 13 + y, 2, bruceConfig.priColor, bruceConfig.bgColor);
-        tft.drawTriangle(8 + x, 8 + y, 8 + x, 2 + y, 13 + x, 5 + y, bruceConfig.priColor);
-        tft.drawTriangle(8 + x, 8 + y, 8 + x, 14 + y, 13 + x, 11 + y, bruceConfig.priColor);
-    }
+void drawMfkey64Icon(int x, int y) {
+    drawMfkey32Icon(x, y);
+    tft.fillRoundRect(x + 40, y + 6, 24, 14, 4, bruceConfig.bgColor);
+    tft.drawRoundRect(x + 40, y + 6, 24, 14, 4, getColorVariation(bruceConfig.priColor, 3, -1));
+    tft.drawCircle(x + 48, y + 12, 4, getColorVariation(bruceConfig.priColor, 3, -1));
+}
 
-    void drawBLE_beacon(int x, int y, uint16_t color) {
-        tft.fillRect(x, y, 40, 80, bruceConfig.bgColor);
-        tft.drawWideLine(40 + x, 53 + y, 2 + x, 26 + y, 5, color, bruceConfig.bgColor);
-        tft.drawWideLine(40 + x, 26 + y, 2 + x, 53 + y, 5, color, bruceConfig.bgColor);
-        tft.drawWideLine(40 + x, 53 + y, 20 + x, 68 + y, 5, color, bruceConfig.bgColor);
-        tft.drawWideLine(40 + x, 26 + y, 20 + x, 12 + y, 5, color, bruceConfig.bgColor);
-        tft.drawWideLine(20 + x, 12 + y, 20 + x, 68 + y, 5, color, bruceConfig.bgColor);
-        tft.fillTriangle(40 + x, 26 + y, 20 + x, 40 + y, 20 + x, 12 + y, color);
-        tft.fillTriangle(40 + x, 53 + y, 20 + x, 40 + y, 20 + x, 68 + y, color);
-    }
+// ####################################################################################################
+//  Draw a JPEG on the TFT, images will be cropped on the right/bottom sides if they do not fit
+// ####################################################################################################
+//  from:
+//  https://github.com/Bodmer/TFT_eSPI/blob/master/examples/Generic/ESP32_SDcard_jpeg/ESP32_SDcard_jpeg.ino
+//  This function assumes xpos,ypos is a valid screen coordinate. For convenience images that do not
+//  fit totally on the screen are cropped to the nearest MCU size and may leave right/bottom borders.
+void jpegRender(int xpos, int ypos) {
 
-    void drawGPS(int x, int y) {
-        tft.fillRect(x, y, 80, 80, bruceConfig.bgColor);
-        tft.drawEllipse(40 + x, 70 + y, 15, 8, bruceConfig.priColor);
-        tft.drawArc(40 + x, 25 + y, 23, 7, 0, 340, bruceConfig.priColor, bruceConfig.bgColor);
-        tft.fillTriangle(40 + x, 70 + y, 20 + x, 64 + y, 60 + x, 64 + y, bruceConfig.priColor);
-    }
+    // jpegInfo(); // Print information from the JPEG file (could comment this line out)
 
-    void drawGpsSmall(int x, int y) {
-        tft.fillRect(x, y, 17, 17, bruceConfig.bgColor);
-        tft.drawEllipse(9 + x, 14 + y, 4, 3, bruceConfig.priColor);
-        tft.drawArc(9 + x, 6 + y, 5, 2, 0, 340, bruceConfig.priColor, bruceConfig.bgColor);
-        tft.fillTriangle(9 + x, 15 + y, 5 + x, 9 + y, 13 + x, 9 + y, bruceConfig.priColor);
-    }
+    uint16_t *pImg;
+    uint16_t mcu_w = JpegDec.MCUWidth;
+    uint16_t mcu_h = JpegDec.MCUHeight;
+    uint32_t max_x = JpegDec.width;
+    uint32_t max_y = JpegDec.height;
 
-    void drawCreditCard(int x, int y) {
-        tft.fillRect(x, y, 70, 50, bruceConfig.bgColor);
-        tft.fillRoundRect(x + 5, y + 5, 60, 40, 5, bruceConfig.priColor);
-        tft.fillRect(x + 5, y + 15, 60, 10, getColorVariation(bruceConfig.priColor, 3, -1));
-        tft.fillRect(x + 10, y + 30, 12, 10, getColorVariation(bruceConfig.priColor, 3, 1));
-        tft.drawRect(x + 10, y + 30, 12, 10, getColorVariation(bruceConfig.priColor, 5, -1));
-        tft.drawRect(x + 10 + 4, y + 30, 4, 10, getColorVariation(bruceConfig.priColor, 5, -1));
-        tft.drawRect(x + 10, y + 33, 5, 4, getColorVariation(bruceConfig.priColor, 5, -1));
-        tft.drawRect(x + 17, y + 33, 5, 4, getColorVariation(bruceConfig.priColor, 5, -1));
-        tft.fillRect(x + 30, y + 35, 30, 5, getColorVariation(bruceConfig.priColor, 5, 1));
-    }
+    bool swapBytes = tft.getSwapBytes();
+    tft.setSwapBytes(true);
 
-    void drawMfkey32Icon(int x, int y) {
-        tft.drawRect(x + 2, y + 15, 24, 40, bruceConfig.priColor);
-        tft.drawRect(x + 5, y + 18, 18, 12, bruceConfig.priColor);
-        tft.drawRect(x + 5, y + 34, 18, 18, bruceConfig.priColor);
-        tft.drawLine(x + 5, y + 40, x + 22, y + 40, bruceConfig.priColor);
-        tft.drawLine(x + 5, y + 46, x + 22, y + 46, bruceConfig.priColor);
-        tft.drawLine(x + 11, y + 34, x + 11, y + 51, bruceConfig.priColor);
-        tft.drawLine(x + 17, y + 34, x + 17, y + 51, bruceConfig.priColor);
-        tft.drawRect(x + 30, y + 10, 25, 35, bruceConfig.priColor);
-        int startX = x + 32;
-        int startY = y + 12;
-        int endX = x + 52;
-        int endY = y + 32;
-        int step = 2;
-        int turns = 0;
+    // Jpeg images are draw as a set of image block (tiles) called Minimum Coding Units (MCUs)
+    // Typically these MCUs are 16x16 pixel blocks
+    // Determine the width and height of the right and bottom edge image blocks
+    uint32_t min_w = jpg_min(mcu_w, max_x % mcu_w);
+    uint32_t min_h = jpg_min(mcu_h, max_y % mcu_h);
 
-        while (startX <= endX && startY <= endY && turns < 3) {
-            for (int i = startX; i <= endX; i++) { tft.drawPixel(i, startY, bruceConfig.priColor); }
-            startY += step;
-            for (int i = startY; i <= endY; i++) { tft.drawPixel(endX, i, bruceConfig.priColor); }
-            endX -= step;
-            for (int i = endX; i >= startX; i--) { tft.drawPixel(i, endY, bruceConfig.priColor); }
-            endY -= step;
-            for (int i = endY; i >= startY; i--) { tft.drawPixel(startX, i, bruceConfig.priColor); }
-            startX += step;
-            turns++;
-        }
-        tft.fillRect(x + 40, y + 36, 6, 6, getColorVariation(bruceConfig.priColor, 3, 1));
-    }
+    // save the current image block size
+    uint32_t win_w = mcu_w;
+    uint32_t win_h = mcu_h;
 
-    void drawMfkey64Icon(int x, int y) {
-        drawMfkey32Icon(x, y);
-        tft.fillRoundRect(x + 40, y + 6, 24, 14, 4, bruceConfig.bgColor);
-        tft.drawRoundRect(x + 40, y + 6, 24, 14, 4, getColorVariation(bruceConfig.priColor, 3, -1));
-        tft.drawCircle(x + 48, y + 12, 4, getColorVariation(bruceConfig.priColor, 3, -1));
-    }
+    // save the coordinate of the right and bottom edges to assist image cropping
+    // to the screen size
+    max_x += xpos;
+    max_y += ypos;
 
-    // ####################################################################################################
-    //  Draw a JPEG on the TFT, images will be cropped on the right/bottom sides if they do not fit
-    // ####################################################################################################
-    //  from:
-    //  https://github.com/Bodmer/TFT_eSPI/blob/master/examples/Generic/ESP32_SDcard_jpeg/ESP32_SDcard_jpeg.ino
-    //  This function assumes xpos,ypos is a valid screen coordinate. For convenience images that do not
-    //  fit totally on the screen are cropped to the nearest MCU size and may leave right/bottom borders.
-    void jpegRender(int xpos, int ypos) {
+    // Fetch data from the file, decode and display
+    tft.fillRect(xpos, ypos, JpegDec.width, JpegDec.height, TFT_BLACK);
+    while (JpegDec.read()) {   // While there is more data in the file
+        pImg = JpegDec.pImage; // Decode a MCU (Minimum Coding Unit, typically a 8x8 or 16x16 pixel block)
 
-        // jpegInfo(); // Print information from the JPEG file (could comment this line out)
+        // Calculate coordinates of top left corner of current MCU
+        int mcu_x = JpegDec.MCUx * mcu_w + xpos;
+        int mcu_y = JpegDec.MCUy * mcu_h + ypos;
 
-        uint16_t *pImg;
-        uint16_t mcu_w = JpegDec.MCUWidth;
-        uint16_t mcu_h = JpegDec.MCUHeight;
-        uint32_t max_x = JpegDec.width;
-        uint32_t max_y = JpegDec.height;
+        // check if the image block size needs to be changed for the right edge
+        if (mcu_x + mcu_w <= max_x) win_w = mcu_w;
+        else win_w = min_w;
 
-        bool swapBytes = tft.getSwapBytes();
-        tft.setSwapBytes(true);
+        // check if the image block size needs to be changed for the bottom edge
+        if (mcu_y + mcu_h <= max_y) win_h = mcu_h;
+        else win_h = min_h;
 
-        // Jpeg images are draw as a set of image block (tiles) called Minimum Coding Units (MCUs)
-        // Typically these MCUs are 16x16 pixel blocks
-        // Determine the width and height of the right and bottom edge image blocks
-        uint32_t min_w = jpg_min(mcu_w, max_x % mcu_w);
-        uint32_t min_h = jpg_min(mcu_h, max_y % mcu_h);
-
-        // save the current image block size
-        uint32_t win_w = mcu_w;
-        uint32_t win_h = mcu_h;
-
-        // save the coordinate of the right and bottom edges to assist image cropping
-        // to the screen size
-        max_x += xpos;
-        max_y += ypos;
-
-        // Fetch data from the file, decode and display
-        tft.fillRect(xpos, ypos, JpegDec.width, JpegDec.height, TFT_BLACK);
-        while (JpegDec.read()) {   // While there is more data in the file
-            pImg = JpegDec.pImage; // Decode a MCU (Minimum Coding Unit, typically a 8x8 or 16x16 pixel block)
-
-            // Calculate coordinates of top left corner of current MCU
-            int mcu_x = JpegDec.MCUx * mcu_w + xpos;
-            int mcu_y = JpegDec.MCUy * mcu_h + ypos;
-
-            // check if the image block size needs to be changed for the right edge
-            if (mcu_x + mcu_w <= max_x) win_w = mcu_w;
-            else win_w = min_w;
-
-            // check if the image block size needs to be changed for the bottom edge
-            if (mcu_y + mcu_h <= max_y) win_h = mcu_h;
-            else win_h = min_h;
-
-            // copy pixels into a contiguous block
-            if (win_w != mcu_w) {
-                uint16_t *cImg;
-                int p = 0;
-                cImg = pImg + win_w;
-                for (int h = 1; h < win_h; h++) {
-                    p += mcu_w;
-                    for (int w = 0; w < win_w; w++) {
-                        *cImg = *(pImg + w + p);
-                        cImg++;
-                    }
+        // copy pixels into a contiguous block
+        if (win_w != mcu_w) {
+            uint16_t *cImg;
+            int p = 0;
+            cImg = pImg + win_w;
+            for (int h = 1; h < win_h; h++) {
+                p += mcu_w;
+                for (int w = 0; w < win_w; w++) {
+                    *cImg = *(pImg + w + p);
+                    cImg++;
                 }
             }
-
-            // calculate how many pixels must be drawn
-            uint32_t mcu_pixels = win_w * win_h;
-
-            // draw image MCU block only if it will fit on the screen
-            if ((mcu_x + win_w) <= tft.width() && (mcu_y + win_h) <= tft.height())
-                tft.pushImage(mcu_x, mcu_y, win_w, win_h, pImg);
-            else if ((mcu_y + win_h) > tft.height())
-                JpegDec.abort(); // Image has run off bottom of screen so abort decoding
         }
 
-        tft.setSwapBytes(swapBytes);
+        // calculate how many pixels must be drawn
+        uint32_t mcu_pixels = win_w * win_h;
+
+        // draw image MCU block only if it will fit on the screen
+        if ((mcu_x + win_w) <= tft.width() && (mcu_y + win_h) <= tft.height())
+            tft.pushImage(mcu_x, mcu_y, win_w, win_h, pImg);
+        else if ((mcu_y + win_h) > tft.height())
+            JpegDec.abort(); // Image has run off bottom of screen so abort decoding
     }
 
-    bool showJpeg(FS & fs, String filename, int x, int y, bool center) {
-        // record the current time so we can measure how long it takes to draw an image
-        uint32_t drawTime = millis();
-        File picture;
-        if (fs.exists(filename)) picture = fs.open(filename, FILE_READ);
-        else return false;
+    tft.setSwapBytes(swapBytes);
+}
 
-        const size_t data_size = picture.size();
+bool showJpeg(FS &fs, String filename, int x, int y, bool center) {
+    // record the current time so we can measure how long it takes to draw an image
+    uint32_t drawTime = millis();
+    File picture;
+    if (fs.exists(filename)) picture = fs.open(filename, FILE_READ);
+    else return false;
 
-        // Alloc memory into heap
-        uint8_t *data_array = new uint8_t[data_size];
-        if (data_array == nullptr) {
-            // Fail allocating memory
-            picture.close();
-            delete[] data_array;
-            return false;
-        }
+    const size_t data_size = picture.size();
 
-        uint8_t data;
-        int i = 0;
-        byte line_len = 0;
-
-        while (picture.available()) {
-            data = picture.read();
-            data_array[i] = data;
-            i++;
-
-            // print array on Serial
-            /*
-            Serial.print("0x");
-            if (abs(data) < 16) {
-              Serial.print("0");
-            }
-
-            Serial.print(data, HEX);
-            Serial.print(","); // Add value and comma
-            line_len++;
-            if (line_len >= 32) {
-              line_len = 0;
-              Serial.println();
-            }
-            */
-        }
-
+    // Alloc memory into heap
+    uint8_t *data_array = new uint8_t[data_size];
+    if (data_array == nullptr) {
+        // Fail allocating memory
         picture.close();
-
-        bool decoded = false;
-        if (data_array) {
-            decoded = JpegDec.decodeArray(data_array, data_size);
-        } else {
-            displayError(filename + " Fail");
-            delay(2500);
-            delete[] data_array; // free heap before leaving
-            return false;
-        }
-
-        if (decoded) {
-            if (center) {
-                x = x + (tftWidth - JpegDec.width) / 2;
-                y = y + (tftHeight - JpegDec.height) / 2;
-            }
-            jpegRender(x, y);
-        }
-        // calculate how long it took to draw the image
-        drawTime = millis() - drawTime; // Calculate the time it took
-
-        // print the results to the serial port
-        Serial.print("Total render time was    : ");
-        Serial.print(drawTime);
-        Serial.println(" ms");
-        Serial.println("=====================================");
-
-        delete[] data_array; // free heap before leaving
-        return true;
-    }
-
-#if !defined(LITE_VERSION)
-    // ####################################################################################################
-    //  Draw a GIF on the TFT
-    //  derived from
-    //  https://github.com/bitbank2/AnimatedGIF/blob/master/examples/TFT_eSPI_memory/TFT_eSPI_memory.ino and
-    //  https://github.com/bitbank2/AnimatedGIF/blob/master/examples/best_practices_example/best_practices_example.ino
-    // ####################################################################################################
-
-    Gif::Gif() : gifPosition(0, 0) {}
-
-    Gif::~Gif() {
-        gif->close();
-        delete gif;
-    }
-
-    FS *Gif::GifFs = NULL;
-
-    void *Gif::openFile(const char *fname, int32_t *pSize) {
-        File GifFile;
-
-        if (GifFs != NULL) {
-            GifFile = GifFs->open(fname);
-        } else {
-            if (SD.exists(fname)) GifFile = SD.open(fname);
-            else if (LittleFS.exists(fname)) GifFile = LittleFS.open(fname);
-        }
-
-        File *FSGifFile = new File(GifFile);
-
-        if (FSGifFile) {
-            *pSize = FSGifFile->size();
-            return (void *)FSGifFile;
-        }
-        return NULL;
-    }
-
-    void Gif::closeFile(void *pHandle) {
-        File *f = static_cast<File *>(pHandle);
-        if (f != NULL) { f->close(); }
-        delete f;
-    }
-
-    int32_t Gif::readFile(GIFFILE * pFile, uint8_t *pBuf, int32_t iLen) {
-        int32_t iBytesRead;
-        iBytesRead = iLen;
-        File *f = static_cast<File *>(pFile->fHandle);
-        // Note: If you read a file all the way to the last byte, seek() stops working
-        if ((pFile->iSize - pFile->iPos) < iLen)
-            iBytesRead = pFile->iSize - pFile->iPos - 1; // <-- ugly work-around
-        if (iBytesRead <= 0) return 0;
-        iBytesRead = (int32_t)f->read(pBuf, iBytesRead);
-        pFile->iPos = f->position();
-        return iBytesRead;
-    }
-
-    int32_t Gif::seekFile(GIFFILE * pFile, int32_t iPosition) {
-        int i = micros();
-        File *f = static_cast<File *>(pFile->fHandle);
-        f->seek(iPosition);
-        pFile->iPos = (int32_t)f->position();
-        i = micros() - i;
-        return pFile->iPos;
-    }
-
-    void Gif::GIFDraw(GIFDRAW * pDraw) {
-        uint8_t *s;
-        uint16_t *d, *usPalette, usTemp[tftWidth];
-        int x, y, iWidth;
-
-        GifPosition *position = (GifPosition *)(pDraw->pUser);
-
-        iWidth = pDraw->iWidth;
-        if (iWidth > tftWidth) iWidth = tftWidth;
-        usPalette = pDraw->pPalette;
-        y = pDraw->iY + pDraw->y; // current line
-
-        s = pDraw->pPixels;
-        if (pDraw->ucDisposalMethod == 2) { // restore to background color
-            for (x = 0; x < iWidth; x++) {
-                if (s[x] == pDraw->ucTransparent) s[x] = pDraw->ucBackground;
-            }
-            pDraw->ucHasTransparency = 0;
-        }
-        // Apply the new pixels to the main image
-        if (pDraw->ucHasTransparency) { // if transparency used
-            uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
-            int x, iCount;
-            pEnd = s + iWidth;
-            x = 0;
-            iCount = 0; // count non-transparent pixels
-            while (x < iWidth) {
-                c = ucTransparent - 1;
-                d = usTemp;
-                while (c != ucTransparent && s < pEnd) {
-                    c = *s++;
-                    if (c == ucTransparent) { // done, stop
-                        s--;                  // back up to treat it like transparent
-                    } else {                  // opaque
-                        *d++ = usPalette[c];
-                        iCount++;
-                    }
-                } // while looking for opaque pixels
-                if (iCount) { // any opaque pixels?
-                    tft.drawPixel(0, 0, 0);
-                    tft.pushImage(
-                        pDraw->iX + x + position->x, y + position->y, iCount, 1, (uint16_t *)usTemp
-                    );
-                    x += iCount;
-                    iCount = 0;
-                }
-                // no, look for a run of transparent pixels
-                c = ucTransparent;
-                while (c == ucTransparent && s < pEnd) {
-                    c = *s++;
-                    if (c == ucTransparent) iCount++;
-                    else s--;
-                }
-                if (iCount) {
-                    x += iCount; // skip these
-                    iCount = 0;
-                }
-            }
-        } else {
-            s = pDraw->pPixels;
-            // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-            for (x = 0; x < iWidth; x++) usTemp[x] = usPalette[*s++];
-            tft.drawPixel(0, 0, 0);
-            tft.pushImage(pDraw->iX + position->x, y + position->y, iWidth, 1, (uint16_t *)usTemp);
-        }
-    } /* GIFDraw() */
-
-    bool Gif::openGIF(FS * fs, const char *filename) {
-        if (fs != NULL) {
-            GifFs = fs;
-            if (!fs->exists(filename)) return false;
-        } else {
-            GifFs = NULL;
-        }
-
-        gif = new AnimatedGIF();
-        gif->begin(BIG_ENDIAN_PIXELS);
-        if (gif->open(filename, openFile, closeFile, readFile, seekFile, GIFDraw)) { return true; }
-
-        log_e("GIF opening error: %d\n", gif->getLastError());
+        delete[] data_array;
         return false;
     }
 
-    // Play a single frame
-    // returns:
-    // 2 = skipped waiting for another frame
-    // 1 = good result and more frames exist
-    // 0 = no more frames exist, a frame may or may not have been played: use getLastError() and look for
-    // GIF_SUCCESS to know if a frame was played -1 = error
-    int Gif::playFrame(int x, int y, bool bSync) {
-        if (bSync && ((millis() - lTime) >= *delayMilliseconds)) {
-            lTime = millis();
-            gifPosition.x = x;
-            gifPosition.y = y;
-            return gif->playFrame(false, delayMilliseconds, &gifPosition);
+    uint8_t data;
+    int i = 0;
+    byte line_len = 0;
+
+    while (picture.available()) {
+        data = picture.read();
+        data_array[i] = data;
+        i++;
+
+        // print array on Serial
+        /*
+        Serial.print("0x");
+        if (abs(data) < 16) {
+          Serial.print("0");
         }
 
-        return 2;
+        Serial.print(data, HEX);
+        Serial.print(","); // Add value and comma
+        line_len++;
+        if (line_len >= 32) {
+          line_len = 0;
+          Serial.println();
+        }
+        */
     }
 
-    int Gif::getLastError() { return gif->getLastError(); }
+    picture.close();
 
-    /*
-     * playDurationMs:
-     * -1 : Play the GIF in an infinite loop
-     * 0  : Play the GIF once
-     * >0  : Play the GIF for the specified duration in milliseconds
-     * (e.g., 1000 = play for 1 second)
-     */
-    bool showGif(
-        FS * fs, const char *filename, int x, int y, bool center, int playDurationMs, bool resetButtonStatus
-    ) {
-        if (!fs->exists(filename)) return false;
+    bool decoded = false;
+    if (data_array) {
+        decoded = JpegDec.decodeArray(data_array, data_size);
+    } else {
+        displayError(filename + " Fail");
+        delay(2500);
+        delete[] data_array; // free heap before leaving
+        return false;
+    }
 
-        Gif gif;
-        bool success = gif.openGIF(fs, filename);
-        if (!success) { return false; }
-
+    if (decoded) {
         if (center) {
-            x = x + (tftWidth - gif.getCanvasWidth()) / 2;
-            y = y + (tftHeight - gif.getCanvasHeight()) / 2;
+            x = x + (tftWidth - JpegDec.width) / 2;
+            y = y + (tftHeight - JpegDec.height) / 2;
         }
-
-        int result = 0;
-        long timeStart = millis();
-        do {
-            result = gif.playFrame(x, y);
-            if (result == -1) log_e("GIF playFrame error: %d\n", gif.getLastError());
-
-            if (check(AnyKeyPress, resetButtonStatus)) break;
-
-            if (playDurationMs > 0 && (millis() - timeStart) > playDurationMs) break;
-            if (playDurationMs == 0 && result == 0) break;
-        } while (result >= 0);
-
-        return true;
+        jpegRender(x, y);
     }
+    // calculate how long it took to draw the image
+    drawTime = millis() - drawTime; // Calculate the time it took
+
+    // print the results to the serial port
+    Serial.print("Total render time was    : ");
+    Serial.print(drawTime);
+    Serial.println(" ms");
+    Serial.println("=====================================");
+
+    delete[] data_array; // free heap before leaving
+    return true;
+}
+
+#if !defined(LITE_VERSION)
+// ####################################################################################################
+//  Draw a GIF on the TFT
+//  derived from
+//  https://github.com/bitbank2/AnimatedGIF/blob/master/examples/TFT_eSPI_memory/TFT_eSPI_memory.ino and
+//  https://github.com/bitbank2/AnimatedGIF/blob/master/examples/best_practices_example/best_practices_example.ino
+// ####################################################################################################
+
+Gif::Gif() : gifPosition(0, 0) {}
+
+Gif::~Gif() {
+    gif->close();
+    delete gif;
+}
+
+FS *Gif::GifFs = NULL;
+
+void *Gif::openFile(const char *fname, int32_t *pSize) {
+    File GifFile;
+
+    if (GifFs != NULL) {
+        GifFile = GifFs->open(fname);
+    } else {
+        if (SD.exists(fname)) GifFile = SD.open(fname);
+        else if (LittleFS.exists(fname)) GifFile = LittleFS.open(fname);
+    }
+
+    File *FSGifFile = new File(GifFile);
+
+    if (FSGifFile) {
+        *pSize = FSGifFile->size();
+        return (void *)FSGifFile;
+    }
+    return NULL;
+}
+
+void Gif::closeFile(void *pHandle) {
+    File *f = static_cast<File *>(pHandle);
+    if (f != NULL) { f->close(); }
+    delete f;
+}
+
+int32_t Gif::readFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen) {
+    int32_t iBytesRead;
+    iBytesRead = iLen;
+    File *f = static_cast<File *>(pFile->fHandle);
+    // Note: If you read a file all the way to the last byte, seek() stops working
+    if ((pFile->iSize - pFile->iPos) < iLen)
+        iBytesRead = pFile->iSize - pFile->iPos - 1; // <-- ugly work-around
+    if (iBytesRead <= 0) return 0;
+    iBytesRead = (int32_t)f->read(pBuf, iBytesRead);
+    pFile->iPos = f->position();
+    return iBytesRead;
+}
+
+int32_t Gif::seekFile(GIFFILE *pFile, int32_t iPosition) {
+    int i = micros();
+    File *f = static_cast<File *>(pFile->fHandle);
+    f->seek(iPosition);
+    pFile->iPos = (int32_t)f->position();
+    i = micros() - i;
+    return pFile->iPos;
+}
+
+void Gif::GIFDraw(GIFDRAW *pDraw) {
+    uint8_t *s;
+    uint16_t *d, *usPalette, usTemp[tftWidth];
+    int x, y, iWidth;
+
+    GifPosition *position = (GifPosition *)(pDraw->pUser);
+
+    iWidth = pDraw->iWidth;
+    if (iWidth > tftWidth) iWidth = tftWidth;
+    usPalette = pDraw->pPalette;
+    y = pDraw->iY + pDraw->y; // current line
+
+    s = pDraw->pPixels;
+    if (pDraw->ucDisposalMethod == 2) { // restore to background color
+        for (x = 0; x < iWidth; x++) {
+            if (s[x] == pDraw->ucTransparent) s[x] = pDraw->ucBackground;
+        }
+        pDraw->ucHasTransparency = 0;
+    }
+    // Apply the new pixels to the main image
+    if (pDraw->ucHasTransparency) { // if transparency used
+        uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
+        int x, iCount;
+        pEnd = s + iWidth;
+        x = 0;
+        iCount = 0; // count non-transparent pixels
+        while (x < iWidth) {
+            c = ucTransparent - 1;
+            d = usTemp;
+            while (c != ucTransparent && s < pEnd) {
+                c = *s++;
+                if (c == ucTransparent) { // done, stop
+                    s--;                  // back up to treat it like transparent
+                } else {                  // opaque
+                    *d++ = usPalette[c];
+                    iCount++;
+                }
+            } // while looking for opaque pixels
+            if (iCount) { // any opaque pixels?
+                tft.drawPixel(0, 0, 0);
+                tft.pushImage(pDraw->iX + x + position->x, y + position->y, iCount, 1, (uint16_t *)usTemp);
+                x += iCount;
+                iCount = 0;
+            }
+            // no, look for a run of transparent pixels
+            c = ucTransparent;
+            while (c == ucTransparent && s < pEnd) {
+                c = *s++;
+                if (c == ucTransparent) iCount++;
+                else s--;
+            }
+            if (iCount) {
+                x += iCount; // skip these
+                iCount = 0;
+            }
+        }
+    } else {
+        s = pDraw->pPixels;
+        // Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
+        for (x = 0; x < iWidth; x++) usTemp[x] = usPalette[*s++];
+        tft.drawPixel(0, 0, 0);
+        tft.pushImage(pDraw->iX + position->x, y + position->y, iWidth, 1, (uint16_t *)usTemp);
+    }
+} /* GIFDraw() */
+
+bool Gif::openGIF(FS *fs, const char *filename) {
+    if (fs != NULL) {
+        GifFs = fs;
+        if (!fs->exists(filename)) return false;
+    } else {
+        GifFs = NULL;
+    }
+
+    gif = new AnimatedGIF();
+    gif->begin(BIG_ENDIAN_PIXELS);
+    if (gif->open(filename, openFile, closeFile, readFile, seekFile, GIFDraw)) { return true; }
+
+    log_e("GIF opening error: %d\n", gif->getLastError());
+    return false;
+}
+
+// Play a single frame
+// returns:
+// 2 = skipped waiting for another frame
+// 1 = good result and more frames exist
+// 0 = no more frames exist, a frame may or may not have been played: use getLastError() and look for
+// GIF_SUCCESS to know if a frame was played -1 = error
+int Gif::playFrame(int x, int y, bool bSync) {
+    if (bSync && ((millis() - lTime) >= *delayMilliseconds)) {
+        lTime = millis();
+        gifPosition.x = x;
+        gifPosition.y = y;
+        return gif->playFrame(false, delayMilliseconds, &gifPosition);
+    }
+
+    return 2;
+}
+
+int Gif::getLastError() { return gif->getLastError(); }
+
+/*
+ * playDurationMs:
+ * -1 : Play the GIF in an infinite loop
+ * 0  : Play the GIF once
+ * >0  : Play the GIF for the specified duration in milliseconds
+ * (e.g., 1000 = play for 1 second)
+ */
+bool showGif(
+    FS *fs, const char *filename, int x, int y, bool center, int playDurationMs, bool resetButtonStatus
+) {
+    if (!fs->exists(filename)) return false;
+
+    Gif gif;
+    bool success = gif.openGIF(fs, filename);
+    if (!success) { return false; }
+
+    if (center) {
+        x = x + (tftWidth - gif.getCanvasWidth()) / 2;
+        y = y + (tftHeight - gif.getCanvasHeight()) / 2;
+    }
+
+    int result = 0;
+    long timeStart = millis();
+    do {
+        result = gif.playFrame(x, y);
+        if (result == -1) log_e("GIF playFrame error: %d\n", gif.getLastError());
+
+        if (check(AnyKeyPress, resetButtonStatus)) break;
+
+        if (playDurationMs > 0 && (millis() - timeStart) > playDurationMs) break;
+        if (playDurationMs == 0 && result == 0) break;
+    } while (result >= 0);
+
+    return true;
+}
 #endif
-    /***************************************************************************************
-    ** Function name: getComplementaryColor2
-    ** Description:   Get simple complementary color in RGB565 format
-    ***************************************************************************************/
-    uint16_t getComplementaryColor2(uint16_t color) {
-        int r = 31 - ((color >> 11) & 0x1F);
-        int g = 63 - ((color >> 5) & 0x3F);
-        int b = 31 - (color & 0x1F);
-        return (r << 11) | (g << 5) | b;
+/***************************************************************************************
+** Function name: getComplementaryColor2
+** Description:   Get simple complementary color in RGB565 format
+***************************************************************************************/
+uint16_t getComplementaryColor2(uint16_t color) {
+    int r = 31 - ((color >> 11) & 0x1F);
+    int g = 63 - ((color >> 5) & 0x3F);
+    int b = 31 - (color & 0x1F);
+    return (r << 11) | (g << 5) | b;
+}
+/***************************************************************************************
+** Function name: getComplementaryColor
+** Description:   Get complementary color in RGB565 format
+***************************************************************************************/
+uint16_t getComplementaryColor(uint16_t color) {
+    double r = ((color >> 11) & 0x1F) / 31.0;
+    double g = ((color >> 5) & 0x3F) / 63.0;
+    double b = (color & 0x1F) / 31.0;
+
+    double cmax = fmax(r, fmax(g, b));
+    double cmin = fmin(r, fmin(g, b));
+    double delta = cmax - cmin;
+
+    double hue = 0.0;
+    if (delta == 0) hue = 0.0;
+    else if (cmax == r) hue = 60 * fmod((g - b) / delta, 6);
+    else if (cmax == g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+
+    if (hue < 0) hue += 360;
+
+    double lightness = (cmax + cmin) / 2;
+    double saturation = (delta == 0) ? 0 : delta / (1 - std::abs(2 * lightness - 1));
+
+    double compHue = fmod(hue + 180, 360);
+
+    double c = (1 - std::abs(2 * lightness - 1)) * saturation;
+    double x = c * (1 - std::abs(fmod(compHue / 60, 2) - 1));
+    double m = lightness - c / 2;
+
+    double compR = 0, compG = 0, compB = 0;
+    if (compHue >= 0 && compHue < 60) {
+        compR = c;
+        compG = x;
+    } else if (compHue >= 60 && compHue < 120) {
+        compR = x;
+        compG = c;
+    } else if (compHue >= 120 && compHue < 180) {
+        compG = c;
+        compB = x;
+    } else if (compHue >= 180 && compHue < 240) {
+        compG = x;
+        compB = c;
+    } else if (compHue >= 240 && compHue < 300) {
+        compB = c;
+        compR = x;
+    } else {
+        compB = x;
+        compR = c;
     }
-    /***************************************************************************************
-    ** Function name: getComplementaryColor
-    ** Description:   Get complementary color in RGB565 format
-    ***************************************************************************************/
-    uint16_t getComplementaryColor(uint16_t color) {
-        double r = ((color >> 11) & 0x1F) / 31.0;
-        double g = ((color >> 5) & 0x3F) / 63.0;
-        double b = (color & 0x1F) / 31.0;
 
-        double cmax = fmax(r, fmax(g, b));
-        double cmin = fmin(r, fmin(g, b));
-        double delta = cmax - cmin;
+    uint16_t compl_color = uint8_t(compR * 31) << 11 | uint8_t(compG * 63) << 5 | uint8_t(compB * 31);
 
-        double hue = 0.0;
-        if (delta == 0) hue = 0.0;
-        else if (cmax == r) hue = 60 * fmod((g - b) / delta, 6);
-        else if (cmax == g) hue = 60 * ((b - r) / delta + 2);
-        else hue = 60 * ((r - g) / delta + 4);
+    // change black color
+    if (compl_color == 0) compl_color = color - 0x1111;
 
-        if (hue < 0) hue += 360;
+    return compl_color;
+}
 
-        double lightness = (cmax + cmin) / 2;
-        double saturation = (delta == 0) ? 0 : delta / (1 - std::abs(2 * lightness - 1));
+/***************************************************************************************
+** Function name: getColorVariation
+** Description:   Get a variation of color in RGB565 format
+***************************************************************************************/
+uint16_t getColorVariation(uint16_t color, int delta, int direction) {
+    uint8_t r = ((color >> 11) & 0x1F);
+    uint8_t g = ((color >> 5) & 0x3F);
+    uint8_t b = (color & 0x1F);
 
-        double compHue = fmod(hue + 180, 360);
+    float brightness = 0.299 * r / 31 + 0.587 * g / 63 + 0.114 * b / 31;
 
-        double c = (1 - std::abs(2 * lightness - 1)) * saturation;
-        double x = c * (1 - std::abs(fmod(compHue / 60, 2) - 1));
-        double m = lightness - c / 2;
+    if (direction < 0 || (direction == 0 && brightness >= 0.5)) {
+        r = max(0, r - delta);
+        g = max(0, g - 2 * delta);
+        b = max(0, b - delta);
+    } else {
+        r = min(31, r + delta);
+        g = min(63, g + 2 * delta);
+        b = min(31, b + delta);
+    }
 
-        double compR = 0, compG = 0, compB = 0;
-        if (compHue >= 0 && compHue < 60) {
-            compR = c;
-            compG = x;
-        } else if (compHue >= 60 && compHue < 120) {
-            compR = x;
-            compG = c;
-        } else if (compHue >= 120 && compHue < 180) {
-            compG = c;
-            compB = x;
-        } else if (compHue >= 180 && compHue < 240) {
-            compG = x;
-            compB = c;
-        } else if (compHue >= 240 && compHue < 300) {
-            compB = c;
-            compR = x;
-        } else {
-            compB = x;
-            compR = c;
+    uint16_t compl_color = r << 11 | g << 5 | b;
+
+    return compl_color;
+}
+
+// Draw BITMAP files
+// These read 16- and 32-bit types from the SD card file.
+// BMP data is stored little-endian, Arduino is little-endian too.
+// May need to reverse subscript order if porting elsewhere.
+
+uint16_t read16(fs::File &f) {
+    uint16_t result;
+    ((uint8_t *)&result)[0] = f.read(); // LSB
+    ((uint8_t *)&result)[1] = f.read(); // MSB
+    return result;
+}
+
+uint32_t read32(fs::File &f) {
+    uint32_t result;
+    ((uint8_t *)&result)[0] = f.read(); // LSB
+    ((uint8_t *)&result)[1] = f.read();
+    ((uint8_t *)&result)[2] = f.read();
+    ((uint8_t *)&result)[3] = f.read(); // MSB
+    return result;
+}
+bool drawBmp(FS &fs, String filename, int x, int y, bool center) {
+    if ((x >= tft.width()) || (y >= tft.height())) return false;
+    uint32_t startTime = millis();
+
+    File bmpFS;
+
+    // Open requested file on SD card
+    bmpFS = fs.open(filename, "r");
+
+    if (!bmpFS) {
+        Serial.print("File not found");
+        goto ERROR;
+    }
+
+    uint32_t seekOffset;
+    uint16_t w, h, row, col;
+    uint8_t r, g, b;
+
+    if (read16(bmpFS) == 0x4D42) {
+        read32(bmpFS);
+        read32(bmpFS);
+        seekOffset = read32(bmpFS);
+        read32(bmpFS);
+        w = read32(bmpFS);
+        h = read32(bmpFS);
+        if (center) {
+            x = x + (tftWidth - w) / 2;
+            y = y + (tftHeight - h) / 2;
         }
 
-        uint16_t compl_color = uint8_t(compR * 31) << 11 | uint8_t(compG * 63) << 5 | uint8_t(compB * 31);
+        if ((read16(bmpFS) == 1) && (read16(bmpFS) == 24) && (read32(bmpFS) == 0)) {
+            y += h - 1;
 
-        // change black color
-        if (compl_color == 0) compl_color = color - 0x1111;
+            bool oldSwapBytes = tft.getSwapBytes();
+            tft.setSwapBytes(true);
+            bmpFS.seek(seekOffset);
 
-        return compl_color;
-    }
+            uint16_t padding = (4 - ((w * 3) & 3)) & 3;
+            uint8_t lineBuffer[w * 3 + padding];
 
-    /***************************************************************************************
-    ** Function name: getColorVariation
-    ** Description:   Get a variation of color in RGB565 format
-    ***************************************************************************************/
-    uint16_t getColorVariation(uint16_t color, int delta, int direction) {
-        uint8_t r = ((color >> 11) & 0x1F);
-        uint8_t g = ((color >> 5) & 0x3F);
-        uint8_t b = (color & 0x1F);
+            for (row = 0; row < h; row++) {
 
-        float brightness = 0.299 * r / 31 + 0.587 * g / 63 + 0.114 * b / 31;
+                bmpFS.read(lineBuffer, sizeof(lineBuffer));
+                uint8_t *bptr = lineBuffer;
+                uint16_t *tptr = (uint16_t *)lineBuffer;
+                // Convert 24 to 16-bit colours
+                for (uint16_t col = 0; col < w; col++) {
+                    b = *bptr++;
+                    g = *bptr++;
+                    r = *bptr++;
+                    *tptr++ = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+                }
 
-        if (direction < 0 || (direction == 0 && brightness >= 0.5)) {
-            r = max(0, r - delta);
-            g = max(0, g - 2 * delta);
-            b = max(0, b - delta);
+                // Push the pixel row to screen, pushImage will crop the line if needed
+                // y is decremented as the BMP image is drawn bottom up
+                tft.drawPixel(
+                    0, 0, 0
+                ); // shared TFT_Spi devices struggle to work, need call a line first sometimes
+                tft.pushImage(x, y--, w, 1, (uint16_t *)lineBuffer);
+            }
+            tft.setSwapBytes(oldSwapBytes);
+            Serial.print("BMP Loaded in ");
+            Serial.print(millis() - startTime);
+            Serial.println(" ms");
         } else {
-            r = min(31, r + delta);
-            g = min(63, g + 2 * delta);
-            b = min(31, b + delta);
-        }
-
-        uint16_t compl_color = r << 11 | g << 5 | b;
-
-        return compl_color;
-    }
-
-    // Draw BITMAP files
-    // These read 16- and 32-bit types from the SD card file.
-    // BMP data is stored little-endian, Arduino is little-endian too.
-    // May need to reverse subscript order if porting elsewhere.
-
-    uint16_t read16(fs::File & f) {
-        uint16_t result;
-        ((uint8_t *)&result)[0] = f.read(); // LSB
-        ((uint8_t *)&result)[1] = f.read(); // MSB
-        return result;
-    }
-
-    uint32_t read32(fs::File & f) {
-        uint32_t result;
-        ((uint8_t *)&result)[0] = f.read(); // LSB
-        ((uint8_t *)&result)[1] = f.read();
-        ((uint8_t *)&result)[2] = f.read();
-        ((uint8_t *)&result)[3] = f.read(); // MSB
-        return result;
-    }
-    bool drawBmp(FS & fs, String filename, int x, int y, bool center) {
-        if ((x >= tft.width()) || (y >= tft.height())) return false;
-        uint32_t startTime = millis();
-
-        File bmpFS;
-
-        // Open requested file on SD card
-        bmpFS = fs.open(filename, "r");
-
-        if (!bmpFS) {
-            Serial.print("File not found");
             goto ERROR;
         }
-
-        uint32_t seekOffset;
-        uint16_t w, h, row, col;
-        uint8_t r, g, b;
-
-        if (read16(bmpFS) == 0x4D42) {
-            read32(bmpFS);
-            read32(bmpFS);
-            seekOffset = read32(bmpFS);
-            read32(bmpFS);
-            w = read32(bmpFS);
-            h = read32(bmpFS);
-            if (center) {
-                x = x + (tftWidth - w) / 2;
-                y = y + (tftHeight - h) / 2;
-            }
-
-            if ((read16(bmpFS) == 1) && (read16(bmpFS) == 24) && (read32(bmpFS) == 0)) {
-                y += h - 1;
-
-                bool oldSwapBytes = tft.getSwapBytes();
-                tft.setSwapBytes(true);
-                bmpFS.seek(seekOffset);
-
-                uint16_t padding = (4 - ((w * 3) & 3)) & 3;
-                uint8_t lineBuffer[w * 3 + padding];
-
-                for (row = 0; row < h; row++) {
-
-                    bmpFS.read(lineBuffer, sizeof(lineBuffer));
-                    uint8_t *bptr = lineBuffer;
-                    uint16_t *tptr = (uint16_t *)lineBuffer;
-                    // Convert 24 to 16-bit colours
-                    for (uint16_t col = 0; col < w; col++) {
-                        b = *bptr++;
-                        g = *bptr++;
-                        r = *bptr++;
-                        *tptr++ = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                    }
-
-                    // Push the pixel row to screen, pushImage will crop the line if needed
-                    // y is decremented as the BMP image is drawn bottom up
-                    tft.drawPixel(
-                        0, 0, 0
-                    ); // shared TFT_Spi devices struggle to work, need call a line first sometimes
-                    tft.pushImage(x, y--, w, 1, (uint16_t *)lineBuffer);
-                }
-                tft.setSwapBytes(oldSwapBytes);
-                Serial.print("BMP Loaded in ");
-                Serial.print(millis() - startTime);
-                Serial.println(" ms");
-            } else {
-                goto ERROR;
-            }
-        } else {
-        ERROR:
-            Serial.println("BMP format not recognized.");
-            bmpFS.close();
-            return false;
-        }
+    } else {
+    ERROR:
+        Serial.println("BMP format not recognized.");
         bmpFS.close();
-        return true;
-    }
-
-    bool drawImg(
-        FS & fs, String filename, int x, int y, bool center, int playDurationMs, bool resetButtonStatus
-    ) {
-        String ext = filename.substring(filename.lastIndexOf('.'));
-        ext.toLowerCase();
-        uint8_t fls = 2;         // 2 for Little FS
-        if (&fs == &SD) fls = 0; // 0 for SD
-        tft.imageToBin(fls, filename, x, y, center, playDurationMs);
-        if (ext.endsWith("jpg")) return showJpeg(fs, filename, x, y, center);
-        else if (ext.endsWith("bmp")) return drawBmp(fs, filename, x, y, center);
-        else if (ext.endsWith("png")) return drawPNG(fs, filename, x, y, center);
-
-#if !defined(LITE_VERSION)
-
-        else if (ext.endsWith("gif"))
-            return showGif(&fs, filename.c_str(), x, y, center, playDurationMs, resetButtonStatus);
-#endif
-        else log_e("Image not supported");
-
         return false;
     }
+    bmpFS.close();
+    return true;
+}
+
+bool drawImg(FS &fs, String filename, int x, int y, bool center, int playDurationMs, bool resetButtonStatus) {
+    String ext = filename.substring(filename.lastIndexOf('.'));
+    ext.toLowerCase();
+    uint8_t fls = 2;         // 2 for Little FS
+    if (&fs == &SD) fls = 0; // 0 for SD
+    tft.imageToBin(fls, filename, x, y, center, playDurationMs);
+    if (ext.endsWith("jpg")) return showJpeg(fs, filename, x, y, center);
+    else if (ext.endsWith("bmp")) return drawBmp(fs, filename, x, y, center);
+    else if (ext.endsWith("png")) return drawPNG(fs, filename, x, y, center);
 
 #if !defined(LITE_VERSION)
-    /// Draw PNG files
+
+    else if (ext.endsWith("gif"))
+        return showGif(&fs, filename.c_str(), x, y, center, playDurationMs, resetButtonStatus);
+#endif
+    else log_e("Image not supported");
+
+    return false;
+}
+
+#if !defined(LITE_VERSION)
+/// Draw PNG files
 
 #include <PNGdec.h>
 #if TFT_WIDTH > TFT_HEIGHT
@@ -1629,226 +1624,226 @@ void drawStatusBar() {
 #else
 #define MAX_IMAGE_WIDTH TFT_HEIGHT
 #endif
-    PNG *png = nullptr;
-    // Optional pointer to write decoded lines into a cached BIN file
-    static File *pngBinOut = nullptr;
-    static bool pngCacheOnly = false;
+PNG *png = nullptr;
+// Optional pointer to write decoded lines into a cached BIN file
+static File *pngBinOut = nullptr;
+static bool pngCacheOnly = false;
 // Optionally use heap capabilities on ESP32 to pick the best memory region for the decoder
 #if defined(ESP32)
 #include <esp_heap_caps.h>
 #endif
-    // Functions to access a file on the SD card
-    File myfile;
-    FS *_fs;
+// Functions to access a file on the SD card
+File myfile;
+FS *_fs;
 
-    void *myOpen(const char *filename, int32_t *size) {
-        // Serial.printf("Attempting to open %s\n", filename);
-        myfile = _fs->open(filename);
-        *size = myfile.size();
-        return &myfile;
+void *myOpen(const char *filename, int32_t *size) {
+    // Serial.printf("Attempting to open %s\n", filename);
+    myfile = _fs->open(filename);
+    *size = myfile.size();
+    return &myfile;
+}
+void myClose(void *handle) {
+    if (myfile) myfile.close();
+}
+int32_t myRead(PNGFILE *handle, uint8_t *buffer, int32_t length) {
+    if (!myfile) return 0;
+    return myfile.read(buffer, length);
+}
+int32_t mySeek(PNGFILE *handle, int32_t position) {
+    if (!myfile) return 0;
+    return myfile.seek(position);
+}
+// Function to draw pixels to the display
+int16_t xpos = 0;
+int16_t ypos = 0;
+int PNGDraw(PNGDRAW *pDraw) {
+    uint16_t usPixels[MAX_IMAGE_WIDTH];
+    // static uint16_t dmaBuffer[MAX_IMAGE_WIDTH]; // static so buffer persists after fn exit
+    uint8_t r = ((uint16_t)bruceConfig.bgColor & 0xF800) >> 8;
+    uint8_t g = ((uint16_t)bruceConfig.bgColor & 0x07E0) >> 3;
+    uint8_t b = ((uint16_t)bruceConfig.bgColor & 0x001F) << 3;
+    png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_BIG_ENDIAN, b << 16 | g << 8 | r);
+    if (!pngCacheOnly) {
+        tft.drawPixel(0, 0, 0);
+        tft.drawPixel(0, 0, 0);
+        tft.pushImage(xpos, ypos + pDraw->y, pDraw->iWidth, 1, usPixels);
     }
-    void myClose(void *handle) {
-        if (myfile) myfile.close();
-    }
-    int32_t myRead(PNGFILE * handle, uint8_t *buffer, int32_t length) {
-        if (!myfile) return 0;
-        return myfile.read(buffer, length);
-    }
-    int32_t mySeek(PNGFILE * handle, int32_t position) {
-        if (!myfile) return 0;
-        return myfile.seek(position);
-    }
-    // Function to draw pixels to the display
-    int16_t xpos = 0;
-    int16_t ypos = 0;
-    int PNGDraw(PNGDRAW * pDraw) {
-        uint16_t usPixels[MAX_IMAGE_WIDTH];
-        // static uint16_t dmaBuffer[MAX_IMAGE_WIDTH]; // static so buffer persists after fn exit
-        uint8_t r = ((uint16_t)bruceConfig.bgColor & 0xF800) >> 8;
-        uint8_t g = ((uint16_t)bruceConfig.bgColor & 0x07E0) >> 3;
-        uint8_t b = ((uint16_t)bruceConfig.bgColor & 0x001F) << 3;
-        png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_BIG_ENDIAN, b << 16 | g << 8 | r);
-        if (!pngCacheOnly) {
-            tft.drawPixel(0, 0, 0);
-            tft.drawPixel(0, 0, 0);
-            tft.pushImage(xpos, ypos + pDraw->y, pDraw->iWidth, 1, usPixels);
-        }
-        if (pngBinOut) { pngBinOut->write((uint8_t *)usPixels, pDraw->iWidth * sizeof(uint16_t)); }
-        return 1;
+    if (pngBinOut) { pngBinOut->write((uint8_t *)usPixels, pDraw->iWidth * sizeof(uint16_t)); }
+    return 1;
+}
+
+// Build a cache path alongside the PNG: <dir>/tmp/<basename>.bin
+static String buildPngBinPath(const String &pngPath) {
+    int slash = pngPath.lastIndexOf('/');
+    String dir = (slash >= 0) ? pngPath.substring(0, slash) : "";
+    String name = pngPath.substring(slash + 1);
+    int dot = name.lastIndexOf('.');
+    if (dot > 0) name = name.substring(0, dot);
+
+    String tmpDir = dir.length() ? dir + "/tmp" : "/tmp";
+    if (!tmpDir.startsWith("/")) tmpDir = "/" + tmpDir;
+
+    return tmpDir + "/" + name + ".bin";
+}
+
+static bool ensureTmpDir(FS &fs, const String &binPath) {
+    int slash = binPath.lastIndexOf('/');
+    if (slash < 0) return false;
+    String dir = binPath.substring(0, slash);
+    if (fs.exists(dir)) return true;
+    return fs.mkdir(dir);
+}
+
+// Render a previously cached BIN (RGB565 LE with 2-byte width/height header)
+static bool drawPngBin(FS &fs, const String &binPath, int x, int y, bool center) {
+    File f = fs.open(binPath, FILE_READ);
+    if (!f) return false;
+
+    uint16_t w = 0, h = 0;
+    if (f.read((uint8_t *)&w, sizeof(uint16_t)) != sizeof(uint16_t) ||
+        f.read((uint8_t *)&h, sizeof(uint16_t)) != sizeof(uint16_t)) {
+        f.close();
+        return false;
     }
 
-    // Build a cache path alongside the PNG: <dir>/tmp/<basename>.bin
-    static String buildPngBinPath(const String &pngPath) {
-        int slash = pngPath.lastIndexOf('/');
-        String dir = (slash >= 0) ? pngPath.substring(0, slash) : "";
-        String name = pngPath.substring(slash + 1);
-        int dot = name.lastIndexOf('.');
-        if (dot > 0) name = name.substring(0, dot);
-
-        String tmpDir = dir.length() ? dir + "/tmp" : "/tmp";
-        if (!tmpDir.startsWith("/")) tmpDir = "/" + tmpDir;
-
-        return tmpDir + "/" + name + ".bin";
+    if (center) {
+        x = x + (tftWidth - w) / 2;
+        y = y + (tftHeight - h) / 2;
     }
 
-    static bool ensureTmpDir(FS & fs, const String &binPath) {
-        int slash = binPath.lastIndexOf('/');
-        if (slash < 0) return false;
-        String dir = binPath.substring(0, slash);
-        if (fs.exists(dir)) return true;
-        return fs.mkdir(dir);
+    if (x >= tft.width() || y >= tft.height()) {
+        f.close();
+        return false;
     }
 
-    // Render a previously cached BIN (RGB565 LE with 2-byte width/height header)
-    static bool drawPngBin(FS & fs, const String &binPath, int x, int y, bool center) {
-        File f = fs.open(binPath, FILE_READ);
-        if (!f) return false;
+    std::unique_ptr<uint16_t[]> line(new (std::nothrow) uint16_t[w]);
+    if (!line) {
+        f.close();
+        return false;
+    }
 
-        uint16_t w = 0, h = 0;
-        if (f.read((uint8_t *)&w, sizeof(uint16_t)) != sizeof(uint16_t) ||
-            f.read((uint8_t *)&h, sizeof(uint16_t)) != sizeof(uint16_t)) {
+    size_t rowBytes = w * sizeof(uint16_t);
+    for (uint16_t row = 0; row < h; ++row) {
+        if (f.read((uint8_t *)line.get(), rowBytes) != rowBytes) {
             f.close();
             return false;
+        }
+        tft.pushImage(x, y + row, w, 1, line.get());
+    }
+
+    f.close();
+    return true;
+}
+
+bool drawPNG(FS &fs, String filename, int x, int y, bool center) {
+    if ((x >= tft.width()) || (y >= tft.height())) return false;
+    _fs = &fs;
+    uint32_t dt = millis();
+
+    String binPath = buildPngBinPath(filename);
+    if (fs.exists(binPath)) {
+        if (pngCacheOnly) return true; // cache already ready
+        if (drawPngBin(fs, binPath, x, y, center)) return true;
+        fs.remove(binPath); // stale cache, fall back to decode
+    }
+
+    // Allocate decoder only while drawing, then release to keep RAM available for Wi-Fi/AP usage
+#if defined(ESP32)
+    bool usedHeapCaps = true;
+    void *mem = psramFound() ? heap_caps_malloc(sizeof(PNG), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+                             : heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
+    if (!mem) {
+        mem = malloc(sizeof(PNG));
+        usedHeapCaps = false;
+    }
+#else
+    void *mem = malloc(sizeof(PNG));
+#endif
+#if !defined(ESP32)
+    bool usedHeapCaps = false;
+#endif
+
+    if (!mem) {
+        Serial.println("Fail alloc PNG!");
+        bruceConfig.theme.label = true;
+        return false;
+    }
+
+    png = new (mem) PNG();
+    int16_t rc = png->open(filename.c_str(), myOpen, myClose, myRead, mySeek, PNGDraw);
+    if (rc == PNG_SUCCESS) {
+        // Serial.printf("image specs: (%d x %d), %d bpp, pixel type: %d\n", png->getWidth(),
+        // png->getHeight(), png->getBpp(), png->getPixelType());
+
+        File binFile;
+        if (ensureTmpDir(fs, binPath)) {
+            binFile = fs.open(binPath, FILE_WRITE);
+            if (binFile) {
+                uint16_t w = png->getWidth();
+                uint16_t h = png->getHeight();
+                binFile.write((uint8_t *)&w, sizeof(uint16_t));
+                binFile.write((uint8_t *)&h, sizeof(uint16_t));
+                pngBinOut = &binFile;
+            }
         }
 
         if (center) {
-            x = x + (tftWidth - w) / 2;
-            y = y + (tftHeight - h) / 2;
+            xpos = x + (tftWidth - png->getWidth()) / 2;
+            ypos = y + (tftHeight - png->getHeight()) / 2;
         }
 
-        if (x >= tft.width() || y >= tft.height()) {
-            f.close();
-            return false;
-        }
-
-        std::unique_ptr<uint16_t[]> line(new (std::nothrow) uint16_t[w]);
-        if (!line) {
-            f.close();
-            return false;
-        }
-
-        size_t rowBytes = w * sizeof(uint16_t);
-        for (uint16_t row = 0; row < h; ++row) {
-            if (f.read((uint8_t *)line.get(), rowBytes) != rowBytes) {
-                f.close();
-                return false;
-            }
-            tft.pushImage(x, y + row, w, 1, line.get());
-        }
-
-        f.close();
-        return true;
-    }
-
-    bool drawPNG(FS & fs, String filename, int x, int y, bool center) {
-        if ((x >= tft.width()) || (y >= tft.height())) return false;
-        _fs = &fs;
-        uint32_t dt = millis();
-
-        String binPath = buildPngBinPath(filename);
-        if (fs.exists(binPath)) {
-            if (pngCacheOnly) return true; // cache already ready
-            if (drawPngBin(fs, binPath, x, y, center)) return true;
-            fs.remove(binPath); // stale cache, fall back to decode
-        }
-
-        // Allocate decoder only while drawing, then release to keep RAM available for Wi-Fi/AP usage
-#if defined(ESP32)
-        bool usedHeapCaps = true;
-        void *mem = psramFound() ? heap_caps_malloc(sizeof(PNG), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
-                                 : heap_caps_malloc(sizeof(PNG), MALLOC_CAP_8BIT);
-        if (!mem) {
-            mem = malloc(sizeof(PNG));
-            usedHeapCaps = false;
-        }
-#else
-        void *mem = malloc(sizeof(PNG));
-#endif
-#if !defined(ESP32)
-        bool usedHeapCaps = false;
-#endif
-
-        if (!mem) {
-            Serial.println("Fail alloc PNG!");
-            bruceConfig.theme.label = true;
-            return false;
-        }
-
-        png = new (mem) PNG();
-        int16_t rc = png->open(filename.c_str(), myOpen, myClose, myRead, mySeek, PNGDraw);
-        if (rc == PNG_SUCCESS) {
-            // Serial.printf("image specs: (%d x %d), %d bpp, pixel type: %d\n", png->getWidth(),
-            // png->getHeight(), png->getBpp(), png->getPixelType());
-
-            File binFile;
-            if (ensureTmpDir(fs, binPath)) {
-                binFile = fs.open(binPath, FILE_WRITE);
-                if (binFile) {
-                    uint16_t w = png->getWidth();
-                    uint16_t h = png->getHeight();
-                    binFile.write((uint8_t *)&w, sizeof(uint16_t));
-                    binFile.write((uint8_t *)&h, sizeof(uint16_t));
-                    pngBinOut = &binFile;
-                }
-            }
-
-            if (center) {
-                xpos = x + (tftWidth - png->getWidth()) / 2;
-                ypos = y + (tftHeight - png->getHeight()) / 2;
-            }
-
-            if (png->getWidth() > MAX_IMAGE_WIDTH) {
-                Serial.println("Image too wide for allocated line buffer size!");
-            } else {
-                rc = png->decode(NULL, 0);
-                png->close();
-            }
-
-            if (pngBinOut) {
-                pngBinOut->close();
-                pngBinOut = nullptr;
-            } else {
-                if (fs.exists(binPath) && rc != PNG_SUCCESS) fs.remove(binPath);
-            }
-            if (rc != PNG_SUCCESS && fs.exists(binPath)) { fs.remove(binPath); }
-
-            // How long did rendering take...
-            Serial.print("PNG Loaded in ");
-            Serial.print(millis() - dt);
-            Serial.println("ms");
+        if (png->getWidth() > MAX_IMAGE_WIDTH) {
+            Serial.println("Image too wide for allocated line buffer size!");
         } else {
-            // Decode/open failed, ensure no stale cache
-            if (fs.exists(binPath)) fs.remove(binPath);
+            rc = png->decode(NULL, 0);
+            png->close();
         }
 
-        // Destroy placement-new object and free memory so RAM is available after rendering
-        png->~PNG();
+        if (pngBinOut) {
+            pngBinOut->close();
+            pngBinOut = nullptr;
+        } else {
+            if (fs.exists(binPath) && rc != PNG_SUCCESS) fs.remove(binPath);
+        }
+        if (rc != PNG_SUCCESS && fs.exists(binPath)) { fs.remove(binPath); }
+
+        // How long did rendering take...
+        Serial.print("PNG Loaded in ");
+        Serial.print(millis() - dt);
+        Serial.println("ms");
+    } else {
+        // Decode/open failed, ensure no stale cache
+        if (fs.exists(binPath)) fs.remove(binPath);
+    }
+
+    // Destroy placement-new object and free memory so RAM is available after rendering
+    png->~PNG();
 #if defined(ESP32)
-        if (usedHeapCaps) heap_caps_free(mem);
-        else free(mem);
+    if (usedHeapCaps) heap_caps_free(mem);
+    else free(mem);
 #else
-        free(mem);
+    free(mem);
 #endif
-        png = nullptr;
+    png = nullptr;
 
-        return rc == PNG_SUCCESS;
-    }
+    return rc == PNG_SUCCESS;
+}
 
-    // Prepare (or verify) the cached BIN for a PNG without rendering it on screen
-    bool preparePngBin(FS & fs, String filename) {
-        bool previous = pngCacheOnly;
-        pngCacheOnly = true;
-        bool ok = drawPNG(fs, filename, 0, 0, false);
-        pngCacheOnly = previous;
-        return ok;
-    }
+// Prepare (or verify) the cached BIN for a PNG without rendering it on screen
+bool preparePngBin(FS &fs, String filename) {
+    bool previous = pngCacheOnly;
+    pngCacheOnly = true;
+    bool ok = drawPNG(fs, filename, 0, 0, false);
+    pngCacheOnly = previous;
+    return ok;
+}
 #else
-    bool preparePngBin(FS & fs, String filename) {
-        log_w("PNG: Not supported in this version");
-        return true;
-    }
-    bool drawPNG(FS & fs, String filename, int x, int y, bool center) {
-        log_w("PNG: Not supported in this version");
-        return false;
-    }
+bool preparePngBin(FS &fs, String filename) {
+    log_w("PNG: Not supported in this version");
+    return true;
+}
+bool drawPNG(FS &fs, String filename, int x, int y, bool center) {
+    log_w("PNG: Not supported in this version");
+    return false;
+}
 #endif

@@ -3,14 +3,11 @@
 #include "core/wifi/wifi_common.h"
 #include "current_year.h"
 #include "display.h"
-#include "modules/ble_api/ble_api.hpp"
-#include "modules/rf/rf_utils.h" // for initRfModule
 #include "mykeyboard.h"
 #include "powerSave.h"
 #include "sd_functions.h"
 #include "settingsColor.h"
 #include "utils.h"
-#include <ELECHOUSE_CC1101_SRC_DRV.h>
 #include <globals.h>
 
 int currentScreenBrightness = -1;
@@ -423,33 +420,11 @@ void setCustomUIColorSettingMenu(
 * retrocompatibility)
 ** Enable or disable sound
 **********************************************************************/
-void setSoundConfig() {
-    options = {
-        {"Sound off", [=]() { bruceConfig.setSoundEnabled(0); }, bruceConfig.soundEnabled == 0},
-        {"Sound on",  [=]() { bruceConfig.setSoundEnabled(1); }, bruceConfig.soundEnabled == 1},
-    };
-    loopOptions(options, bruceConfig.soundEnabled);
-}
 
 /*********************************************************************
 ** Function: setSoundVolume
 ** Set sound volume
 **********************************************************************/
-void setSoundVolume() {
-    options = {
-        {"10%",  [=]() { bruceConfig.setSoundVolume(10); },  bruceConfig.soundVolume == 10 },
-        {"20%",  [=]() { bruceConfig.setSoundVolume(20); },  bruceConfig.soundVolume == 20 },
-        {"30%",  [=]() { bruceConfig.setSoundVolume(30); },  bruceConfig.soundVolume == 30 },
-        {"40%",  [=]() { bruceConfig.setSoundVolume(40); },  bruceConfig.soundVolume == 40 },
-        {"50%",  [=]() { bruceConfig.setSoundVolume(50); },  bruceConfig.soundVolume == 50 },
-        {"60%",  [=]() { bruceConfig.setSoundVolume(60); },  bruceConfig.soundVolume == 60 },
-        {"70%",  [=]() { bruceConfig.setSoundVolume(70); },  bruceConfig.soundVolume == 70 },
-        {"80%",  [=]() { bruceConfig.setSoundVolume(80); },  bruceConfig.soundVolume == 80 },
-        {"90%",  [=]() { bruceConfig.setSoundVolume(90); },  bruceConfig.soundVolume == 90 },
-        {"100%", [=]() { bruceConfig.setSoundVolume(100); }, bruceConfig.soundVolume == 100},
-    };
-    loopOptions(options, bruceConfig.soundVolume);
-}
 
 #ifdef HAS_RGB_LED
 /*********************************************************************
@@ -598,143 +573,21 @@ void setEvilPasswordMode() {
 ** Function: setRFModuleMenu
 ** Handles Menu to set the RF module in use
 **********************************************************************/
-void setRFModuleMenu() {
-    int result = 0;
-    int idx = 0;
-    uint8_t pins_setup = 0;
-    if (bruceConfigPins.rfModule == M5_RF_MODULE) idx = 0;
-    else if (bruceConfigPins.rfModule == CC1101_SPI_MODULE) {
-        idx = 1;
-#if defined(ARDUINO_M5STICK_C_PLUS) || defined(ARDUINO_M5STICK_C_PLUS2)
-        if (bruceConfigPins.CC1101_bus.mosi == GPIO_NUM_26) idx = 2;
-#endif
-    }
-
-    options = {
-        {"M5 RF433T/R",         [&]() { result = M5_RF_MODULE; }   },
-#if defined(ARDUINO_M5STICK_C_PLUS) || defined(ARDUINO_M5STICK_C_PLUS2)
-        {"CC1101 (legacy)",     [&pins_setup]() { pins_setup = 1; }},
-        {"CC1101 (Shared SPI)", [&pins_setup]() { pins_setup = 2; }},
-#else
-        {"CC1101", [&]() { result = CC1101_SPI_MODULE; }},
-#endif
-    };
-    loopOptions(options, idx);
-    if (result == CC1101_SPI_MODULE || pins_setup > 0) {
-        // This setting is meant to StickCPlus and StickCPlus2 to setup the ports from RF Menu
-        if (pins_setup == 1) {
-            result = CC1101_SPI_MODULE;
-            bruceConfigPins.setCC1101Pins(
-                {(gpio_num_t)CC1101_SCK_PIN,
-                 (gpio_num_t)CC1101_MISO_PIN,
-                 (gpio_num_t)CC1101_MOSI_PIN,
-                 (gpio_num_t)CC1101_SS_PIN,
-                 (gpio_num_t)CC1101_GDO0_PIN,
-                 GPIO_NUM_NC}
-            );
-            bruceConfigPins.setNrf24Pins(
-                {(gpio_num_t)CC1101_SCK_PIN,
-                 (gpio_num_t)CC1101_MISO_PIN,
-                 (gpio_num_t)CC1101_MOSI_PIN,
-                 (gpio_num_t)CC1101_SS_PIN,
-                 (gpio_num_t)CC1101_GDO0_PIN,
-                 GPIO_NUM_NC}
-            );
-        } else if (pins_setup == 2) {
-#if CONFIG_SOC_GPIO_OUT_RANGE_MAX > 30
-            result = CC1101_SPI_MODULE;
-            bruceConfigPins.setCC1101Pins(
-                {(gpio_num_t)SDCARD_SCK,
-                 (gpio_num_t)SDCARD_MISO,
-                 (gpio_num_t)SDCARD_MOSI,
-                 GPIO_NUM_33,
-                 GPIO_NUM_32,
-                 GPIO_NUM_NC}
-            );
-            bruceConfigPins.setNrf24Pins(
-                {(gpio_num_t)SDCARD_SCK,
-                 (gpio_num_t)SDCARD_MISO,
-                 (gpio_num_t)SDCARD_MOSI,
-                 GPIO_NUM_33,
-                 GPIO_NUM_32,
-                 GPIO_NUM_NC}
-            );
-#endif
-        }
-        if (initRfModule()) {
-            bruceConfigPins.setRfModule(CC1101_SPI_MODULE);
-            deinitRfModule();
-            if (pins_setup == 1) CC_NRF_SPI.end();
-            return;
-        }
-        // else display an error
-        displayError("CC1101 not found", true);
-        while (!check(AnyKeyPress)) vTaskDelay(50 / portTICK_PERIOD_MS);
-    }
-    // fallback to "M5 RF433T/R" on errors
-    bruceConfigPins.setRfModule(M5_RF_MODULE);
-}
 
 /*********************************************************************
 ** Function: setRFFreqMenu
 ** Handles Menu to set the default frequency for the RF module
 **********************************************************************/
-void setRFFreqMenu() {
-    float result = 433.92;
-    String freq_str = num_keyboard(String(bruceConfigPins.rfFreq), 10, "Default frequency:");
-    if (freq_str == "\x1B") return;
-    if (freq_str.length() > 1) {
-        result = freq_str.toFloat();          // returns 0 if not valid
-        if (result >= 280 && result <= 928) { // TODO: check valid freq according to current module?
-            bruceConfigPins.setRfFreq(result);
-            return;
-        }
-    }
-    // else
-    displayError("Invalid frequency");
-    bruceConfigPins.setRfFreq(433.92); // reset to default
-    delay(1000);
-}
 
 /*********************************************************************
 ** Function: setRFIDModuleMenu
 ** Handles Menu to set the RFID module in use
 **********************************************************************/
-void setRFIDModuleMenu() {
-    options = {
-        {"M5 RFID2",
-         [=]() { bruceConfigPins.setRfidModule(M5_RFID2_MODULE); },
-         bruceConfigPins.rfidModule == M5_RFID2_MODULE     },
-#ifdef M5STICK
-        {"PN532 I2C G33",
-         [=]() { bruceConfigPins.setRfidModule(PN532_I2C_MODULE); },
-         bruceConfigPins.rfidModule == PN532_I2C_MODULE    },
-        {"PN532 I2C G36",
-         [=]() { bruceConfigPins.setRfidModule(PN532_I2C_SPI_MODULE); },
-         bruceConfigPins.rfidModule == PN532_I2C_SPI_MODULE},
-#else
-        {"PN532 on I2C",
-         [=]() { bruceConfigPins.setRfidModule(PN532_I2C_MODULE); },
-         bruceConfigPins.rfidModule == PN532_I2C_MODULE},
-#endif
-        {"PN532 on SPI",
-         [=]() { bruceConfigPins.setRfidModule(PN532_SPI_MODULE); },
-         bruceConfigPins.rfidModule == PN532_SPI_MODULE    },
-        {"RC522 on SPI",
-         [=]() { bruceConfigPins.setRfidModule(RC522_SPI_MODULE); },
-         bruceConfigPins.rfidModule == RC522_SPI_MODULE    },
-    };
-    loopOptions(options, bruceConfigPins.rfidModule);
-}
 
 /*********************************************************************
 ** Function: addMifareKeyMenu
 ** Handles Menu to add MIFARE keys into config list
 **********************************************************************/
-void addMifareKeyMenu() {
-    String key = keyboard("", 12, "MIFARE key");
-    if (key != "\x1B") bruceConfig.addMifareKey(key);
-}
 
 /*********************************************************************
 ** Function: setClock
@@ -1013,172 +866,21 @@ void runClockLoop(bool showMenuHint) {
 ** Function: gsetIrTxPin
 ** get or set IR Tx Pin
 **********************************************************************/
-int gsetIrTxPin(bool set) {
-    int result = bruceConfigPins.irTx;
 
-    if (result > 50) bruceConfigPins.setIrTxPin(TXLED);
-    if (set) {
-        options.clear();
-        std::vector<std::pair<const char *, int>> pins;
-        pins = IR_TX_PINS;
-        int idx = 100;
-        int j = 0;
-        for (auto pin : pins) {
-            if (pin.second == bruceConfigPins.irTx && idx == 100) idx = j;
-            j++;
-#ifdef ALLOW_ALL_GPIO_FOR_IR_RF
-            int i = pin.second;
-            if (i != TFT_CS && i != TFT_RST && i != TFT_SCLK && i != TFT_MOSI && i != TFT_BL &&
-                i != TOUCH_CS && i != SDCARD_CS && i != SDCARD_MOSI && i != SDCARD_MISO)
-#endif
-                options.push_back(
-                    {pin.first,
-                     [=]() { bruceConfigPins.setIrTxPin(pin.second); },
-                     pin.second == bruceConfigPins.irTx}
-                );
-        }
-
-        loopOptions(options, idx);
-        options.clear();
-
-        Serial.println("Saved pin: " + String(bruceConfigPins.irTx));
-    }
-
-    returnToMenu = true;
-    return bruceConfigPins.irTx;
-}
-
-void setIrTxRepeats() {
-    uint8_t chRpts = 0; // Chosen Repeats
-
-    options = {
-        {"None",             [&]() { chRpts = 0; } },
-        {"5  (+ 1 initial)", [&]() { chRpts = 5; } },
-        {"10 (+ 1 initial)", [&]() { chRpts = 10; }},
-        {"Custom",           [&]() {
-             // up to 99 repeats
-             String rpt =
-                 num_keyboard(String(bruceConfigPins.irTxRepeats), 2, "Nbr of Repeats (+ 1 initial)");
-             chRpts = static_cast<uint8_t>(rpt.toInt());
-         }                       },
-    };
-    addOptionToMainMenu();
-
-    loopOptions(options);
-
-    if (returnToMenu) return;
-
-    bruceConfigPins.setIrTxRepeats(chRpts);
-}
 /*********************************************************************
 ** Function: gsetIrRxPin
 ** get or set IR Rx Pin
 **********************************************************************/
-int gsetIrRxPin(bool set) {
-    int result = bruceConfigPins.irRx;
-
-    if (result > 45) bruceConfigPins.setIrRxPin(GROVE_SCL);
-    if (set) {
-        options.clear();
-        std::vector<std::pair<const char *, int>> pins;
-        pins = IR_RX_PINS;
-        int idx = -1;
-        int j = 0;
-        for (auto pin : pins) {
-            if (pin.second == bruceConfigPins.irRx && idx < 0) idx = j;
-            j++;
-#ifdef ALLOW_ALL_GPIO_FOR_IR_RF
-            int i = pin.second;
-            if (i != TFT_CS && i != TFT_RST && i != TFT_SCLK && i != TFT_MOSI && i != TFT_BL &&
-                i != TOUCH_CS && i != SDCARD_CS && i != SDCARD_MOSI && i != SDCARD_MISO)
-#endif
-                options.push_back(
-                    {pin.first,
-                     [=]() { bruceConfigPins.setIrRxPin(pin.second); },
-                     pin.second == bruceConfigPins.irRx}
-                );
-        }
-
-        loopOptions(options);
-    }
-
-    returnToMenu = true;
-    return bruceConfigPins.irRx;
-}
 
 /*********************************************************************
 ** Function: gsetRfTxPin
 ** get or set RF Tx Pin
 **********************************************************************/
-int gsetRfTxPin(bool set) {
-    int result = bruceConfigPins.rfTx;
-
-    if (result > 45) bruceConfigPins.setRfTxPin(GROVE_SDA);
-    if (set) {
-        options.clear();
-        std::vector<std::pair<const char *, int>> pins;
-        pins = RF_TX_PINS;
-        int idx = -1;
-        int j = 0;
-        for (auto pin : pins) {
-            if (pin.second == bruceConfigPins.rfTx && idx < 0) idx = j;
-            j++;
-#ifdef ALLOW_ALL_GPIO_FOR_IR_RF
-            int i = pin.second;
-            if (i != TFT_CS && i != TFT_RST && i != TFT_SCLK && i != TFT_MOSI && i != TFT_BL &&
-                i != TOUCH_CS && i != SDCARD_CS && i != SDCARD_MOSI && i != SDCARD_MISO)
-#endif
-                options.push_back(
-                    {pin.first,
-                     [=]() { bruceConfigPins.setRfTxPin(pin.second); },
-                     pin.second == bruceConfigPins.rfTx}
-                );
-        }
-
-        loopOptions(options);
-        options.clear();
-    }
-
-    returnToMenu = true;
-    return bruceConfigPins.rfTx;
-}
 
 /*********************************************************************
 ** Function: gsetRfRxPin
 ** get or set FR Rx Pin
 **********************************************************************/
-int gsetRfRxPin(bool set) {
-    int result = bruceConfigPins.rfRx;
-
-    if (result > 36) bruceConfigPins.setRfRxPin(GROVE_SCL);
-    if (set) {
-        options.clear();
-        std::vector<std::pair<const char *, int>> pins;
-        pins = RF_RX_PINS;
-        int idx = -1;
-        int j = 0;
-        for (auto pin : pins) {
-            if (pin.second == bruceConfigPins.rfRx && idx < 0) idx = j;
-            j++;
-#ifdef ALLOW_ALL_GPIO_FOR_IR_RF
-            int i = pin.second;
-            if (i != TFT_CS && i != TFT_RST && i != TFT_SCLK && i != TFT_MOSI && i != TFT_BL &&
-                i != TOUCH_CS && i != SDCARD_CS && i != SDCARD_MOSI && i != SDCARD_MISO)
-#endif
-                options.push_back(
-                    {pin.first,
-                     [=]() { bruceConfigPins.setRfRxPin(pin.second); },
-                     pin.second == bruceConfigPins.rfRx}
-                );
-        }
-
-        loopOptions(options);
-        options.clear();
-    }
-
-    returnToMenu = true;
-    return bruceConfigPins.rfRx;
-}
 
 /*********************************************************************
 ** Function: setStartupApp
@@ -1208,19 +910,6 @@ void setStartupApp() {
 ** Function: setGpsBaudrateMenu
 ** Handles Menu to set the baudrate for the GPS module
 **********************************************************************/
-void setGpsBaudrateMenu() {
-    options = {
-        {"9600 bps",   [=]() { bruceConfigPins.setGpsBaudrate(9600); },  bruceConfigPins.gpsBaudrate == 9600 },
-        {"19200 bps",  [=]() { bruceConfigPins.setGpsBaudrate(19200); }, bruceConfigPins.gpsBaudrate == 19200},
-        {"38400 bps",  [=]() { bruceConfigPins.setGpsBaudrate(38400); }, bruceConfigPins.gpsBaudrate == 38400},
-        {"57600 bps",  [=]() { bruceConfigPins.setGpsBaudrate(57600); }, bruceConfigPins.gpsBaudrate == 57600},
-        {"115200 bps",
-         [=]() { bruceConfigPins.setGpsBaudrate(115200); },
-         bruceConfigPins.gpsBaudrate == 115200                                                               },
-    };
-
-    loopOptions(options, bruceConfigPins.gpsBaudrate);
-}
 
 /*********************************************************************
 ** Function: setWifiApSsidMenu
@@ -1297,83 +986,6 @@ void setNetworkCredsMenu() {
     addOptionToMainMenu();
 
     loopOptions(options);
-}
-
-/*********************************************************************
-** Function: setBadUSBBLEMenu
-** Main Menu for setting Bad USB/BLE options
-**********************************************************************/
-void setBadUSBBLEMenu() {
-    options = {
-        {"Keyboard Layout", setBadUSBBLEKeyboardLayoutMenu},
-        {"Key Delay",       setBadUSBBLEKeyDelayMenu      },
-        {"Show Output",     setBadUSBBLEShowOutputMenu    },
-    };
-    addOptionToMainMenu();
-
-    loopOptions(options);
-}
-
-/*********************************************************************
-** Function: setBadUSBBLEKeyboardLayoutMenu
-** Main Menu for setting Bad USB/BLE Keyboard Layout
-**********************************************************************/
-void setBadUSBBLEKeyboardLayoutMenu() {
-    uint8_t opt = bruceConfig.badUSBBLEKeyboardLayout;
-
-    options.clear();
-    options = {
-        {"US International",      [&]() { opt = 0; } },
-        {"Danish",                [&]() { opt = 1; } },
-        {"English (UK)",          [&]() { opt = 2; } },
-        {"French (AZERTY)",       [&]() { opt = 3; } },
-        {"German",                [&]() { opt = 4; } },
-        {"Hungarian",             [&]() { opt = 5; } },
-        {"Italian",               [&]() { opt = 6; } },
-        {"Polish",                [&]() { opt = 7; } },
-        {"Portuguese (Brazil)",   [&]() { opt = 8; } },
-        {"Portuguese (Portugal)", [&]() { opt = 9; } },
-        {"Slovenian",             [&]() { opt = 10; }},
-        {"Spanish",               [&]() { opt = 11; }},
-        {"Swedish",               [&]() { opt = 12; }},
-        {"Turkish",               [&]() { opt = 13; }},
-    };
-    addOptionToMainMenu();
-
-    loopOptions(options, opt);
-
-    if (opt != bruceConfig.badUSBBLEKeyboardLayout) { bruceConfig.setBadUSBBLEKeyboardLayout(opt); }
-}
-
-/*********************************************************************
-** Function: setBadUSBBLEKeyDelayMenu
-** Main Menu for setting Bad USB/BLE Keyboard Key Delay
-**********************************************************************/
-void setBadUSBBLEKeyDelayMenu() {
-    String delayStr = num_keyboard(String(bruceConfig.badUSBBLEKeyDelay), 3, "Key Delay (ms):");
-    if (delayStr != "\x1B") {
-        uint16_t delayVal = static_cast<uint16_t>(delayStr.toInt());
-        if (delayVal <= 500) {
-            bruceConfig.setBadUSBBLEKeyDelay(delayVal);
-        } else {
-            displayError("Invalid key delay value (0 to 500)", true);
-        }
-    }
-}
-
-/*********************************************************************
-** Function: setBadUSBBLEShowOutputMenu
-** Main Menu for setting Bad USB/BLE Show Output
-**********************************************************************/
-void setBadUSBBLEShowOutputMenu() {
-    options.clear();
-    options = {
-        {"Enable",  [&]() { bruceConfig.setBadUSBBLEShowOutput(true); } },
-        {"Disable", [&]() { bruceConfig.setBadUSBBLEShowOutput(false); }},
-    };
-    addOptionToMainMenu();
-
-    loopOptions(options, bruceConfig.badUSBBLEShowOutput ? 0 : 1);
 }
 
 /*********************************************************************
@@ -1607,22 +1219,3 @@ void setTheme() {
         bruceConfig.saveFile();
     }
 }
-#if !defined(LITE_VERSION)
-BLE_API bleApi;
-static bool ble_api_enabled = false;
-
-void enableBLEAPI() {
-    if (!ble_api_enabled) {
-        // displayWarning("BLE API require huge amount of RAM.");
-        // displayWarning("Some features may stop working.");
-        Serial.println(ESP.getFreeHeap());
-        bleApi.setup();
-        Serial.println(ESP.getFreeHeap());
-    } else {
-        bleApi.end();
-    }
-
-    ble_api_enabled = !ble_api_enabled;
-}
-
-#endif

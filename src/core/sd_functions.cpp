@@ -732,33 +732,6 @@ String loopSD(FS &fs, bool filePicker, String allowed_ext, String rootPath) {
                                                              while (!check(AnyKeyPress))
                                                                  vTaskDelay(10 / portTICK_PERIOD_MS);
                                                          }});
-                    if (filepath.endsWith(".ir")) {
-                        options.insert(options.begin(), {"IR Choose cmd", [&]() {
-                                                             delay(200);
-                                                             chooseCmdIrFile(&fs, filepath);
-                                                         }});
-                        options.insert(options.begin(), {"IR Tx SpamAll", [&]() {
-                                                             delay(200);
-                                                             txIrFile(&fs, filepath);
-                                                         }});
-                    }
-                    if (filepath.endsWith(".sub"))
-                        options.insert(options.begin(), {"Subghz Tx", [&]() {
-                                                             delay(200);
-                                                             txSubFile(&fs, filepath);
-                                                         }});
-                    if (filepath.endsWith(".csv")) {
-                        options.insert(options.begin(), {"Wigle Upload", [&]() {
-                                                             delay(200);
-                                                             Wigle wigle;
-                                                             wigle.upload(&fs, filepath);
-                                                         }});
-                        options.insert(options.begin(), {"Wigle Up All", [&]() {
-                                                             delay(200);
-                                                             Wigle wigle;
-                                                             wigle.upload_all(&fs, Folder);
-                                                         }});
-                    }
 
 #if defined(HAS_NS4168_SPKR)
                     if (isAudioFile(filepath))

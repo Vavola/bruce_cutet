@@ -1,12 +1,12 @@
 #include "cli.h"
 #include "crypto_commands.h"
 #include "gpio_commands.h"
-#include "ir_commands.h"
+
 #include "power_commands.h"
-#include "rf_commands.h"
+
 #include "screen_commands.h"
 #include "settings_commands.h"
-#include "sound_commands.h"
+
 #include "storage_commands.h"
 #include "util_commands.h"
 #include "wifi_commands.h"
@@ -27,9 +27,7 @@ void SerialCli::setup() {
     _cli.setOnError(cliErrorCallback);
     createCryptoCommands(&_cli);
     createGpioCommands(&_cli);
-    createIrCommands(&_cli);
     createPowerCommands(&_cli);
-    createRfCommands(&_cli);
     createSettingsCommands(&_cli);
     createStorageCommands(&_cli);
     createUtilCommands(&_cli);
@@ -38,7 +36,6 @@ void SerialCli::setup() {
     createScreenCommands(&_cli);
 #endif
 #if defined(HAS_NS4168_SPKR)
-    createSoundCommands(&_cli);
 #endif
 }
 bool SerialCli::parse(String input) {

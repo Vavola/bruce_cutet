@@ -369,9 +369,7 @@ void startup_sound() {
 #if !defined(LITE_VERSION)
 #if defined(BUZZ_PIN)
     // Bip M5 just because it can. Does not bip if splashscreen is bypassed
-    _tone(5000, 50);
     delay(200);
-    _tone(5000, 50);
     /* 2fix: menu infinite loop */
 #elif defined(HAS_NS4168_SPKR)
     // play a boot sound
@@ -408,7 +406,6 @@ void setup() {
     prog_handler = 0;
     sdcardMounted = false;
     wifiConnected = false;
-    BLEConnected = false;
     bruceConfig.bright = 100; // theres is no value yet
     bruceConfigPins.rotation = ROTATION;
     setup_gpio();
