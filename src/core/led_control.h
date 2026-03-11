@@ -1,42 +1,35 @@
 #ifndef __LED_CONTROL_H__
 #define __LED_CONTROL_H__
-#include <globals.h>
 
-#ifdef HAS_RGB_LED
 #include <Arduino.h>
-#include <FastLED.h>
 
-#define LED_EFFECT_SOLID 0
-#define LED_COLOR_BREATHE 1
-#define LED_EFFECT_COLOR_CYCLE 2
-#define LED_EFFECT_COLOR_WHEEL 3
-#define LED_EFFECT_CHASE 4
-#define LED_EFFECT_CHASE_TAIL 5
+#define CYD_LED_R 4
+#define CYD_LED_G 16
+#define CYD_LED_B 17
 
-CRGB hsvToRgb(uint16_t h, uint8_t s, uint8_t v);
-uint32_t alterOneColorChannel(uint32_t color, uint16_t newR, uint16_t newG, uint16_t newB);
+struct CRGB {
+    uint8_t r, g, b;
+    CRGB() : r(0), g(0), b(0) {}
+    CRGB(uint8_t r, uint8_t g, uint8_t b) : r(r), g(g), b(b) {}
+    CRGB(uint32_t c) : r((c >> 16) & 0xFF), g((c >> 8) & 0xFF), b(c & 0xFF) {}
+};
+
+namespace CRGB_Colors {
+const CRGB Black(0, 0, 0);
+const CRGB Red(255, 0, 0);
+const CRGB Green(0, 255, 0);
+const CRGB Blue(0, 0, 255);
+const CRGB White(255, 255, 255);
+const CRGB Purple(128, 0, 128);
+} // namespace CRGB_Colors
 
 void beginLed();
-void blinkLed(int blinkTime = 50);
-
 void setLedColor(CRGB color);
-void setLedEffect(int effect);
-void setLedColorConfig();
-void setCustomColorMenu();
-void setCustomColorSettingMenuR();
-void setCustomColorSettingMenuG();
-void setCustomColorSettingMenuB();
-void setLedEffectConfig();
-void setLedEffectSpeedConfig();
-void setLedEffectDirectionConfig();
+void setLedAttackMode(int mode, CRGB color); // <-- Новая функция для атак
 void ledSetup();
-void ledEffects(bool enable);
-void ledPreviewMode(bool enable);
-void setLedBrightness(int value);
+void setLedColorConfig();
 void setLedBrightnessConfig();
-
-#else
-inline void blinkLed(int blinkTime = 50) {};
-#endif
+void setLedEffectConfig();
+void blinkLed(int blinkTime = 50);
 
 #endif

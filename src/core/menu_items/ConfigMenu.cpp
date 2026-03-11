@@ -1,17 +1,15 @@
 #include "ConfigMenu.h"
 #include "core/display.h"
 #include "core/i2c_finder.h"
+#include "core/led_control.h" // Убрали блокировку
 #include "core/main_menu.h"
 #include "core/settings.h"
 #include "core/utils.h"
 #include "core/wifi/wifi_common.h"
-#ifdef HAS_RGB_LED
-#include "core/led_control.h"
-#endif
 
 /*********************************************************************
-**  Function: optionsMenu
-**  Main Config menu entry point
+** Function: optionsMenu
+** Main Config menu entry point
 **********************************************************************/
 void ConfigMenu::optionsMenu() {
     returnToMenu = false;
@@ -24,9 +22,7 @@ void ConfigMenu::optionsMenu() {
 
         std::vector<Option> localOptions = {
             {"Display & UI",  [this]() { displayUIMenu(); }},
-#ifdef HAS_RGB_LED
-            {"LED Config",    [this]() { ledMenu(); }      },
-#endif
+            {"LED Config",    [this]() { ledMenu(); }      }, // Убрали блокировку
             {"Audio Config",  [this]() { audioMenu(); }    },
             {"System Config", [this]() { systemMenu(); }   },
             {"Power",         [this]() { powerMenu(); }    },
@@ -48,8 +44,8 @@ void ConfigMenu::optionsMenu() {
 }
 
 /*********************************************************************
-**  Function: displayUIMenu
-**  Display & UI configuration submenu with auto-rebuild
+** Function: displayUIMenu
+** Display & UI configuration submenu with auto-rebuild
 **********************************************************************/
 void ConfigMenu::displayUIMenu() {
     while (true) {
@@ -71,10 +67,9 @@ void ConfigMenu::displayUIMenu() {
 }
 
 /*********************************************************************
-**  Function: ledMenu
-**  LED configuration submenu with auto-rebuild for toggles
+** Function: ledMenu
+** LED configuration submenu with auto-rebuild for toggles
 **********************************************************************/
-#ifdef HAS_RGB_LED
 void ConfigMenu::ledMenu() {
     while (true) {
         std::vector<Option> localOptions = {
@@ -82,37 +77,28 @@ void ConfigMenu::ledMenu() {
              [this]() {
                  beginLed();
                  setLedColorConfig();
-             }                                                                            },
+             }                        },
             {"LED Effect",
              [this]() {
                  beginLed();
                  setLedEffectConfig();
-             }                                                                            },
+             }                        },
             {"LED Brightness",
              [this]() {
                  beginLed();
                  setLedBrightnessConfig();
-             }                                                                            },
-            {String("LED Blink: ") + (bruceConfig.ledBlinkEnabled ? "ON" : "OFF"),
-             [this]() {
-                 // Toggle LED blink setting
-                 bruceConfig.ledBlinkEnabled = !bruceConfig.ledBlinkEnabled;
-                 bruceConfig.saveFile();
-             }                                                                            },
-            {"Back",                                                               []() {}},
+             }                        },
+            {"Back",           []() {}},
         };
 
         int selected = loopOptions(localOptions, MENU_TYPE_SUBMENU, "LED Config");
-
-        // Exit only if user pressed Back or ESC
         if (selected == -1 || selected == localOptions.size() - 1) { return; }
-        // Menu rebuilds to update toggle label
     }
 }
-#endif
+
 /*********************************************************************
-**  Function: audioMenu
-**  Audio configuration submenu with auto-rebuild for toggles
+** Function: audioMenu
+** Audio configuration submenu with auto-rebuild for toggles
 **********************************************************************/
 void ConfigMenu::audioMenu() {
     while (true) {
@@ -143,8 +129,8 @@ void ConfigMenu::audioMenu() {
 }
 
 /*********************************************************************
-**  Function: systemMenu
-**  System configuration submenu with auto-rebuild for toggles
+** Function: systemMenu
+** System configuration submenu with auto-rebuild for toggles
 **********************************************************************/
 void ConfigMenu::systemMenu() {
     while (true) {
@@ -177,8 +163,8 @@ void ConfigMenu::systemMenu() {
 }
 
 /*********************************************************************
-**  Function: advancedMenu
-**  Advanced settings submenu (nested under System Config)
+** Function: advancedMenu
+** Advanced settings submenu (nested under System Config)
 **********************************************************************/
 void ConfigMenu::advancedMenu() {
     while (true) {
@@ -214,8 +200,8 @@ void ConfigMenu::advancedMenu() {
     }
 }
 /*********************************************************************
-**  Function: powerMenu
-**  Power management submenu with auto-rebuild
+** Function: powerMenu
+** Power management submenu with auto-rebuild
 **********************************************************************/
 void ConfigMenu::powerMenu() {
     while (true) {
@@ -243,8 +229,8 @@ void ConfigMenu::powerMenu() {
 }
 
 /*********************************************************************
-**  Function: devMenu
-**  Developer mode menu for advanced hardware configuration
+** Function: devMenu
+** Developer mode menu for advanced hardware configuration
 **********************************************************************/
 void ConfigMenu::devMenu() {
     while (true) {
@@ -281,8 +267,8 @@ void ConfigMenu::devMenu() {
 }
 
 /*********************************************************************
-**  Function: switchToUSBSerial
-**  Switch serial output to USB Serial
+** Function: switchToUSBSerial
+** Switch serial output to USB Serial
 **********************************************************************/
 void ConfigMenu::switchToUSBSerial() {
     USBserial.setSerialOutput(&Serial);
@@ -290,8 +276,8 @@ void ConfigMenu::switchToUSBSerial() {
 }
 
 /*********************************************************************
-**  Function: switchToUARTSerial
-**  Switch serial output to UART (handles pin conflicts)
+** Function: switchToUARTSerial
+** Switch serial output to UART (handles pin conflicts)
 **********************************************************************/
 void ConfigMenu::switchToUARTSerial() {
     // Check and resolve SD card pin conflicts
@@ -313,8 +299,8 @@ void ConfigMenu::switchToUARTSerial() {
     USBserial.setSerialOutput(&Serial1);
 }
 /*********************************************************************
-**  Function: drawIcon
-**  Draw config gear icon
+** Function: drawIcon
+** Draw config gear icon
 **********************************************************************/
 void ConfigMenu::drawIcon(float scale) {
     clearIconArea();

@@ -66,6 +66,10 @@ uint32_t beacon_frames = 0;
 uint32_t start_time = 0;
 long deauth_tmp = 0;
 
+HandshakeTracker hsTracker;
+std::map<uint64_t, ClientStats> targetClients;
+portMUX_TYPE clientsMux = portMUX_INITIALIZER_UNLOCKED;
+
 File _pcap_file;
 File _deauth_file;
 bool deauthFileOpen = false;
@@ -131,7 +135,6 @@ static uint64_t macToKey(const void *mac); // changed to const void *
 static void copyMac(uint8_t *dest, const uint8_t *src);
 static String extractSsid(const wifi_promiscuous_pkt_t *packet);
 static void copySsidToBuffer(const String &ssid, char *buffer, size_t len);
-static String sanitizeSsid(const char *ssid);
 static String macToHex(const uint8_t *mac);
 static String buildHandshakePath(const uint8_t *mac, const char *ssid);
 static bool handshakeFileExists(const String &path);
@@ -207,8 +210,6 @@ bool isItEAPOL(const wifi_promiscuous_pkt_t *packet) {
 
     return false;
 }
-
-HandshakeTracker hsTracker;
 
 bool handshakeUsable(const HandshakeTracker &hs) { // EAPOL Messages needed: 1+2 or 3+4
     return (hs.msg1 && hs.msg2) || (hs.msg3 && hs.msg4);
@@ -318,11 +319,85 @@ void saveHandshake(const wifi_promiscuous_pkt_t *packet, bool beacon, FS &Fs, co
     fichierPcap.close();
 }
 
-static String sanitizeSsid(const char *ssid) {
+String sanitizeSsid(const char *ssid) {
     if (!ssid || ssid[0] == '\0') { return "UNKNOWN"; }
+    String res = ssid;
+    res.replace("А", "A");
+    res.replace("а", "a");
+    res.replace("Б", "B");
+    res.replace("б", "b");
+    res.replace("В", "V");
+    res.replace("в", "v");
+    res.replace("Г", "G");
+    res.replace("г", "g");
+    res.replace("Д", "D");
+    res.replace("д", "d");
+    res.replace("Е", "E");
+    res.replace("е", "e");
+    res.replace("Ё", "E");
+    res.replace("ё", "e");
+    res.replace("Ж", "Zh");
+    res.replace("ж", "zh");
+    res.replace("З", "Z");
+    res.replace("з", "z");
+    res.replace("И", "I");
+    res.replace("и", "i");
+    res.replace("Й", "Y");
+    res.replace("й", "y");
+    res.replace("К", "K");
+    res.replace("к", "k");
+    res.replace("Л", "L");
+    res.replace("л", "l");
+    res.replace("М", "M");
+    res.replace("м", "m");
+    res.replace("Н", "N");
+    res.replace("н", "n");
+    res.replace("О", "O");
+    res.replace("о", "o");
+    res.replace("П", "P");
+    res.replace("п", "p");
+    res.replace("Р", "R");
+    res.replace("р", "r");
+    res.replace("С", "S");
+    res.replace("с", "s");
+    res.replace("Т", "T");
+    res.replace("т", "t");
+    res.replace("У", "U");
+    res.replace("у", "u");
+    res.replace("Ф", "F");
+    res.replace("ф", "f");
+    res.replace("Х", "Kh");
+    res.replace("х", "kh");
+    res.replace("Ц", "Ts");
+    res.replace("ц", "ts");
+    res.replace("Ч", "Ch");
+    res.replace("ч", "ch");
+    res.replace("Ш", "Sh");
+    res.replace("ш", "sh");
+    res.replace("Щ", "Shch");
+    res.replace("щ", "shch");
+    res.replace("Ъ", "");
+    res.replace("ъ", "");
+    res.replace("Ы", "Y");
+    res.replace("ы", "y");
+    res.replace("Ь", "");
+    res.replace("ь", "");
+    res.replace("Э", "E");
+    res.replace("э", "e");
+    res.replace("Ю", "Yu");
+    res.replace("ю", "yu");
+    res.replace("Я", "Ya");
+    res.replace("я", "ya");
+    res.replace("І", "I");
+    res.replace("і", "i");
+    res.replace("Ї", "Yi");
+    res.replace("ї", "yi");
+    res.replace("Є", "Ye");
+    res.replace("є", "ye");
+
     String sanitized = "";
-    for (size_t i = 0; ssid[i] != '\0' && i < MAX_CAPTURE_SSID_LEN; ++i) {
-        const char c = ssid[i];
+    for (size_t i = 0; i < res.length() && sanitized.length() < 32; ++i) {
+        char c = res[i];
         if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
             c == '_' || c == '.') {
             sanitized += c;
@@ -456,7 +531,7 @@ static String resolveSsidForFrame(FrameInfo &info, const wifi_promiscuous_pkt_t 
 
 static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
     FrameInfo info;
-    if (!pkt) { return info; } // removed redundant pkt->payload check
+    if (!pkt) { return info; }
     const uint16_t len = pkt->rx_ctrl.sig_len;
     if (len < 24) { return info; }
 
@@ -477,10 +552,30 @@ static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
     info.isDeauth = (frameType == 0x00) && (frameSubType == 0x0C || frameSubType == 0x0A);
     info.isEapol = isItEAPOL(pkt);
 
+    // --- ПЕРЕХВАТ КЛИЕНТОВ ---
+    if (frameType == 0x02 && (targetBssid[0] != 0x00 || targetBssid[1] != 0x00)) {
+        if (memcmp(addr1, targetBssid, 6) == 0 || memcmp(addr2, targetBssid, 6) == 0) {
+            const uint8_t *cMac = nullptr;
+            if (memcmp(addr1, targetBssid, 6) == 0 && (addr2[0] & 0x01) == 0) cMac = addr2;
+            else if (memcmp(addr2, targetBssid, 6) == 0 && (addr1[0] & 0x01) == 0) cMac = addr1;
+
+            if (cMac != nullptr && memcmp(cMac, targetBssid, 6) != 0) {
+                uint64_t cKey = macToKey(cMac);
+                int8_t rssi = pkt->rx_ctrl.rssi;
+                portENTER_CRITICAL(&clientsMux);
+                if (targetClients.size() < 3 || targetClients.count(cKey)) {
+                    targetClients[cKey].packets++;
+                    targetClients[cKey].rssi = rssi;
+                }
+                portEXIT_CRITICAL(&clientsMux);
+            }
+        }
+    }
+    // -------------------------
+
     if (info.isEapol && matchesTargetAP(pkt, targetBssid)) {
         int msg = classifyEapolMessage(pkt);
         info.eapolMsgNum = msg;
-        // Update handshake tracker
         switch (msg) {
             case 1: hsTracker.msg1 = true; break;
             case 2: hsTracker.msg2 = true; break;
@@ -492,7 +587,6 @@ static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
     info.ssid = resolveSsidForFrame(info, pkt);
     if (info.isBeacon) {
         registerBeacon(info.apAddr);
-        // UPDATE last-seen timestamp for this beacon
         beaconLastSeen[info.apKey] = (uint32_t)millis();
     }
 
@@ -529,7 +623,7 @@ static String extractSsid(const wifi_promiscuous_pkt_t *packet) {
             String ssid = "";
             for (int i = 0; i < tagLength; ++i) {
                 uint8_t chValue = payload[offset + 2 + i];
-                if (isprint(chValue)) { ssid += (char)chValue; }
+                if (chValue != 0) { ssid += (char)chValue; }
             }
             return ssid;
         }

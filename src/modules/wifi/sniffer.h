@@ -3,6 +3,7 @@
 #include <FS.h>
 #include <SD.h>
 #include <WiFi.h>
+#include <map>
 #include <set>
 
 struct HandshakeTracker {
@@ -13,6 +14,15 @@ struct HandshakeTracker {
 };
 
 extern HandshakeTracker hsTracker;
+
+struct ClientStats {
+    int8_t rssi = -127;
+    uint32_t packets = 0;
+};
+extern std::map<uint64_t, ClientStats> targetClients;
+extern portMUX_TYPE clientsMux;
+
+String sanitizeSsid(const char *ssid);
 
 bool handshakeUsable(const HandshakeTracker &hs);
 
@@ -27,6 +37,7 @@ const uint8_t pri_wifi_channels[] = {1, 6, 11, 36, 40, 44, 48, 149, 153, 157, 16
 const uint8_t all_wifi_channels[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 const uint8_t pri_wifi_channels[] = {1, 6, 11};
 #endif
+
 struct BeaconList {
     char MAC[6];
     uint8_t channel;
@@ -51,25 +62,19 @@ extern int num_HS;
 extern int num_EAPOL;
 extern bool isLittleFS;
 extern uint8_t ch;
-
+extern std::set<BeaconList> registeredBeacons;
+extern std::set<String> SavedHS;
 void setHandshakeSniffer();
 void sniffer_set_mode(SnifferMode mode);
 SnifferMode sniffer_get_mode();
 bool sniffer_full_mode_available();
-bool sniffer_prepare_storage(FS *fs, bool sdDetected);
-void sniffer_wait_for_flush(uint32_t timeoutMs = 2000);
+void sniffer_wait_for_flush(uint32_t timeoutMs);
 void sniffer_reset_handshake_cache();
 void markHandshakeReady(uint64_t key);
-
-extern std::set<BeaconList> registeredBeacons;
-extern std::set<String> SavedHS;
-
+void printAddress(const uint8_t *addr);
 void newPacketSD(uint32_t ts_sec, uint32_t ts_usec, uint32_t len, uint8_t *buf, File pcap_file);
-
-void openFile(FS &Fs);
-
 bool writeHeader(File file);
-
-void sniffer_setup();
-
 void sniffer(void *buf, wifi_promiscuous_pkt_type_t type);
+void openFile(FS &Fs);
+void sniffer_setup();
+bool sniffer_prepare_storage(FS *fs, bool sdDetectedParam);

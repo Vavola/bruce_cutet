@@ -3,9 +3,9 @@
 
 #include "menu_items/ConfigMenu.h"
 #include "menu_items/FileMenu.h"
-#include <MenuItemInterface.h>
 
 #include "menu_items/WifiMenu.h"
+#include <MenuItemInterface.h>
 class MainMenu {
 public:
     FileMenu fileMenu;

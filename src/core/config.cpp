@@ -23,14 +23,12 @@ JsonDocument BruceConfig::toJson() const {
     setting["wifiAtStartup"] = wifiAtStartup;
     setting["instantBoot"] = instantBoot;
 
-#ifdef HAS_RGB_LED
     setting["ledBright"] = ledBright;
     setting["ledColor"] = String(ledColor, HEX);
     setting["ledBlinkEnabled"] = ledBlinkEnabled;
     setting["ledEffect"] = ledEffect;
     setting["ledEffectSpeed"] = ledEffectSpeed;
     setting["ledEffectDirection"] = ledEffectDirection;
-#endif
 
     JsonObject _webUI = setting["webUI"].to<JsonObject>();
     _webUI["user"] = webUI.user;
@@ -209,7 +207,6 @@ void BruceConfig::fromFile(bool checkFS) {
         log_e("Fail");
     }
 
-#ifdef HAS_RGB_LED
     if (!setting["ledBright"].isNull()) {
         ledBright = setting["ledBright"].as<int>();
     } else {
@@ -246,7 +243,6 @@ void BruceConfig::fromFile(bool checkFS) {
         count++;
         log_e("Fail");
     }
-#endif
 
     if (!setting["webUI"].isNull()) {
         JsonObject webUIObj = setting["webUI"].as<JsonObject>();
@@ -448,14 +444,14 @@ void BruceConfig::validateConfig() {
     validateSoundEnabledValue();
     validateSoundVolumeValue();
     validateWifiAtStartupValue();
-#ifdef HAS_RGB_LED
+
     validateLedBrightValue();
     validateLedColorValue();
     validateLedBlinkEnabledValue();
     validateLedEffectValue();
     validateLedEffectSpeedValue();
     validateLedEffectDirectionValue();
-#endif
+
     validateMifareKeysItems();
     validateDevModeValue();
     validateColorInverted();
@@ -547,7 +543,6 @@ void BruceConfig::validateWifiAtStartupValue() {
     if (wifiAtStartup > 1) wifiAtStartup = 1;
 }
 
-#ifdef HAS_RGB_LED
 void BruceConfig::setLedBright(int value) {
     ledBright = value;
     validateLedBrightValue();
@@ -611,7 +606,6 @@ void BruceConfig::validateLedEffectDirectionValue() {
     if (ledEffectDirection > 1 || ledEffectDirection == 0) ledEffectDirection = 1;
     if (ledEffectDirection < -1) ledEffectDirection = -1;
 }
-#endif
 
 void BruceConfig::setWebUICreds(const String &usr, const String &pwd) {
     webUI.user = usr;

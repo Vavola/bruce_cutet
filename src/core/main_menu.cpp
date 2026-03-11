@@ -1,5 +1,6 @@
 #include "main_menu.h"
 #include "display.h"
+
 #include "utils.h"
 #include <globals.h>
 
@@ -8,6 +9,7 @@ MainMenu::MainMenu() {
         &wifiMenu,
         &fileMenu,
         &configMenu,
+
     };
     _totalItems = _menuItems.size();
 }

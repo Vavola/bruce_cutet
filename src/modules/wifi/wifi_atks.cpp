@@ -5,6 +5,7 @@
 // C:\Users\<YOur User>\AppData\Local\Arduino15\packages\m5stack\hardware\esp32\2.0.9
 #include "wifi_atks.h"
 #include "core/display.h"
+#include "core/led_control.h" // Подключаем наш светодиод CYD
 #include "core/main_menu.h"
 #include "core/mykeyboard.h"
 #include "core/sd_functions.h"
@@ -41,8 +42,8 @@ wifi_ap_record_t ap_record;
 // clang-format off
 constexpr size_t BEACON_PKT_LEN = 109;
 const uint8_t beaconPacketTemplate[BEACON_PKT_LEN] = {
-    /*  0 - 3  */ 0x80, 0x00, 0x00, 0x00, // Type/Subtype: management beacon frame
-    /*  4 - 9  */ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination: broadcast
+    /* 0 - 3  */ 0x80, 0x00, 0x00, 0x00, // Type/Subtype: management beacon frame
+    /* 4 - 9  */ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, // Destination: broadcast
     /* 10 - 15 */ 0x01, 0x02,  0x03, 0x04, 0x05, 0x06, // Source (placeholder - overwritten)
     /* 16 - 21 */ 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, // BSSID (placeholder - overwritten)
     /* 22 - 23 */ 0x00, 0x00, // Fragment & sequence number (SDK will set)
@@ -217,6 +218,84 @@ bool wifi_atk_unsetWifi() {
     return true;
 }
 
+// Функция транслитерации для меню
+String transliterateSSID(String res) {
+    if (res.length() == 0) return res;
+    res.replace("А", "A");
+    res.replace("а", "a");
+    res.replace("Б", "B");
+    res.replace("б", "b");
+    res.replace("В", "V");
+    res.replace("в", "v");
+    res.replace("Г", "G");
+    res.replace("г", "g");
+    res.replace("Д", "D");
+    res.replace("д", "d");
+    res.replace("Е", "E");
+    res.replace("е", "e");
+    res.replace("Ё", "E");
+    res.replace("ё", "e");
+    res.replace("Ж", "Zh");
+    res.replace("ж", "zh");
+    res.replace("З", "Z");
+    res.replace("з", "z");
+    res.replace("И", "I");
+    res.replace("и", "i");
+    res.replace("Й", "Y");
+    res.replace("й", "y");
+    res.replace("К", "K");
+    res.replace("к", "k");
+    res.replace("Л", "L");
+    res.replace("л", "l");
+    res.replace("М", "M");
+    res.replace("м", "m");
+    res.replace("Н", "N");
+    res.replace("н", "n");
+    res.replace("О", "O");
+    res.replace("о", "o");
+    res.replace("П", "P");
+    res.replace("п", "p");
+    res.replace("Р", "R");
+    res.replace("р", "r");
+    res.replace("С", "S");
+    res.replace("с", "s");
+    res.replace("Т", "T");
+    res.replace("т", "t");
+    res.replace("У", "U");
+    res.replace("у", "u");
+    res.replace("Ф", "F");
+    res.replace("ф", "f");
+    res.replace("Х", "Kh");
+    res.replace("х", "kh");
+    res.replace("Ц", "Ts");
+    res.replace("ц", "ts");
+    res.replace("Ч", "Ch");
+    res.replace("ч", "ch");
+    res.replace("Ш", "Sh");
+    res.replace("ш", "sh");
+    res.replace("Щ", "Shch");
+    res.replace("щ", "shch");
+    res.replace("Ъ", "");
+    res.replace("ъ", "");
+    res.replace("Ы", "Y");
+    res.replace("ы", "y");
+    res.replace("Ь", "");
+    res.replace("ь", "");
+    res.replace("Э", "E");
+    res.replace("э", "e");
+    res.replace("Ю", "Yu");
+    res.replace("ю", "yu");
+    res.replace("Я", "Ya");
+    res.replace("я", "ya");
+    res.replace("І", "I");
+    res.replace("і", "i");
+    res.replace("Ї", "Yi");
+    res.replace("ї", "yi");
+    res.replace("Є", "Ye");
+    res.replace("є", "ye");
+    return res;
+}
+
 /***************************************************************************************
 ** function: target_atk_menu
 ** @brief: Open menu to choose which AP Attack
@@ -261,7 +340,8 @@ void wifi_atk_menu() {
 
             ap_records.push_back(record);
 
-            String ssid = WiFi.SSID(i);
+            // Переводим кириллицу сразу после сканирования!
+            String ssid = transliterateSSID(WiFi.SSID(i));
             int encryptionType = WiFi.encryptionType(i);
             int32_t rssi = WiFi.RSSI(i);
             int32_t ch = WiFi.channel(i);
@@ -290,7 +370,7 @@ void wifi_atk_menu() {
             options.push_back({optionText.c_str(), [=]() {
                                    ap_record = ap_records[i];
                                    target_atk_menu(
-                                       WiFi.SSID(i).c_str(),
+                                       ssid, // <--- Передаем очищенное имя
                                        WiFi.BSSIDstr(i),
                                        static_cast<uint8_t>(WiFi.channel(i))
                                    );
@@ -371,7 +451,7 @@ ScanNets:
 /***************************************************************************************
 ** function: capture_handshake
 ** @brief: Capture handshake for a selected network
-**          (redraws only when deauth is sent or when a handshake/EAPOL is captured)
+** (redraws only when deauth is sent or when a handshake/EAPOL is captured)
 ***************************************************************************************/
 uint8_t targetBssid[6]; // Just the target AP MAC to pass onto sniff.cpp to filter out EAPOL frames of
                         // unrelated APs
@@ -379,6 +459,10 @@ uint8_t targetBssid[6]; // Just the target AP MAC to pass onto sniff.cpp to filt
 void capture_handshake(String tssid, String mac, uint8_t channel) {
 
     hsTracker = HandshakeTracker(); // Reset tracker for each new capture
+
+    portENTER_CRITICAL(&clientsMux);
+    targetClients.clear();
+    portEXIT_CRITICAL(&clientsMux);
 
     uint8_t bssid_array[6];
     sscanf(
@@ -413,33 +497,19 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
         }
     }
 
-    // Sanitize SSID for use in filename (Soft sanitization for Cyrillic support)
-    String sanitizedSsid = "";
-    for (size_t i = 0; i < tssid.length() && i < 32; ++i) {
+    // Идеальная синхронизация с функцией sanitizeSsid из sniffer.cpp
+    String safeSsid = "";
+    for (size_t i = 0; i < tssid.length() && safeSsid.length() < 32; ++i) {
         char c = tssid[i];
-        // Вырезаем только те символы, которые запрещены при создании файлов
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' ||
-            c == '|') {
-            sanitizedSsid += '_';
+        // Разрешаем только латиницу, цифры и базовые символы. Все остальное (включая пробелы) -> '_'
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+            c == '_' || c == '.') {
+            safeSsid += c;
         } else {
-            sanitizedSsid += c;
+            safeSsid += '_';
         }
     }
-    // If SSID was hidden/empty, use BSSID appended to filename so it's unique and descriptive
-    if (sanitizedSsid.length() == 0) {
-        char bssidHex[32];
-        sprintf(
-            bssidHex,
-            "%02X%02X%02X%02X%02X%02X",
-            bssid_array[0],
-            bssid_array[1],
-            bssid_array[2],
-            bssid_array[3],
-            bssid_array[4],
-            bssid_array[5]
-        );
-        sanitizedSsid = String("HIDDEN_") + String(bssidHex);
-    }
+    if (safeSsid.length() == 0) safeSsid = "UNKNOWN";
 
     char hsFileName[128];
     sprintf(
@@ -451,11 +521,10 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
         bssid_array[3],
         bssid_array[4],
         bssid_array[5],
-        sanitizedSsid.c_str()
+        safeSsid.c_str()
     );
 
     bool hsExists = false;
-    bool captured = false;
     FS *fs;
     if (setupSdCard()) {
         fs = &SD;
@@ -505,7 +574,6 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
         uint64_t apKey = 0;
         for (int i = 0; i < 6; ++i) { apKey = (apKey << 8) | bssid_array[i]; }
         markHandshakeReady(apKey);
-        captured = true;
         Serial.println("Handshake file already exists");
     }
 
@@ -526,18 +594,26 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
     memcpy(deauth_frame, deauth_frame_default, sizeof(deauth_frame_default));
 
     int deauthCount = 0;
-    int initialNumEAPOL = num_EAPOL;
-    int prevNumEAPOL = initialNumEAPOL;
+    int prevNumEAPOL = num_EAPOL;
     bool hasBeacons = false;
-    bool hasEAPOL = false;
 
     tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
     tft.setTextSize(FM);
 
     // only redraw when we explicitly need to (deauth sent or handshake captured)
     bool needRedraw = true; // draw once on entry
+    uint32_t lastClientUpdate = millis();
+
+    beginLed(); // Стартуем управление диодом!
 
     while (true) {
+        // Обновляем цвет диода в зависимости от статуса перехвата
+        if (hsTracker.msg1 && hsTracker.msg2 && hsTracker.msg3 && hsTracker.msg4) {
+            setLedAttackMode(2, CRGB_Colors::Green); // Режим 2: Агрессивное мигание
+        } else {
+            setLedAttackMode(1, CRGB_Colors::Blue); // Режим 1: Плавное дыхание (20%-100%)
+        }
+
         // Check if we have beacons
         BeaconList targetBeacon;
         memcpy(targetBeacon.MAC, bssid_array, 6);
@@ -550,10 +626,9 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
             needRedraw = true;
         }
 
-        // Mark handshake captured only when we have useable EAPOL Frame pairs
-        if (handshakeUsable(hsTracker)) {
-            hasEAPOL = true;
-            captured = true;
+        if (millis() - lastClientUpdate > 1500) { // Авто-обновление экрана каждые 1.5 сек
+            needRedraw = true;
+            lastClientUpdate = millis();
         }
 
         if (needRedraw) {
@@ -563,6 +638,32 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
             padprintln("SSID: " + tssid);
             padprintln("BSSID: " + mac);
             padprintln("Security: " + encryptionTypeStr);
+
+            padprintln("");
+            portENTER_CRITICAL(&clientsMux);
+            auto clientsCopy = targetClients;
+            portEXIT_CRITICAL(&clientsMux);
+
+            padprintln("Clients (" + String(clientsCopy.size()) + "):");
+            for (auto const &kv : clientsCopy) {
+                uint64_t key = kv.first;
+                char macStr[40];
+                sprintf(
+                    macStr,
+                    " - %02X:%02X:%02X:%02X:%02X:%02X",
+                    (uint8_t)(key >> 40),
+                    (uint8_t)(key >> 32),
+                    (uint8_t)(key >> 24),
+                    (uint8_t)(key >> 16),
+                    (uint8_t)(key >> 8),
+                    (uint8_t)key
+                );
+                padprintln(
+                    String(macStr) + " | " + String(kv.second.rssi) + " | " + String(kv.second.packets)
+                );
+            }
+            if (clientsCopy.empty()) padprintln(" - Scanning...");
+
             padprintln("");
 
             // Show console status
@@ -612,6 +713,8 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
 
         // If user presses the select button -> send deauth and request redraw
         if (check(SelPress)) {
+            setLedAttackMode(3, CRGB_Colors::Red); // Режим 3: Временная мощная вспышка красным!
+
             wsl_bypasser_send_raw_frame(&ap_record, channel);
             for (int i = 0; i < 5; i++) {
                 send_raw_frame(deauth_frame, sizeof(deauth_frame_default));
@@ -619,6 +722,8 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
             }
             deauthCount += 5;
             needRedraw = true; // show updated deauth counter
+
+            vTaskDelay(50 / portTICK_PERIOD_MS); // Даем время глазу заметить красную вспышку
         }
 
         // Exit condition
@@ -627,6 +732,8 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
         // small yield so other tasks can run; keeps responsiveness without constant redraw
         vTaskDelay(50 / portTICK_PERIOD_MS);
     }
+
+    setLedAttackMode(0, CRGB_Colors::Black); // Сброс атаки, возврат управления ядру
 
     esp_wifi_set_promiscuous(false);
     esp_wifi_set_promiscuous_rx_cb(NULL);
