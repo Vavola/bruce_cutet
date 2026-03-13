@@ -9,7 +9,6 @@
 #include "modules/wifi/brucegotchi.h"
 #include "modules/wifi/clients.h"
 #include "modules/wifi/karma_attack.h"
-#include "modules/wifi/pc_sync.h"
 #include "modules/wifi/responder.h"
 #include "modules/wifi/scan_hosts.h"
 #include "modules/wifi/sniffer.h"
@@ -45,7 +44,6 @@ void WifiMenu::optionsMenu() {
 
     // --- НАША НОВАЯ КНОПКА ДЛЯ АВТО-СНАЙПЕРА ---
     options.push_back({"Brucegotchi (Auto)", []() { brucegotchi_start(); }});
-    options.push_back({"Sync PCAP to PC", []() { pc_sync_start(); }});
 
 #ifndef LITE_VERSION
     options.push_back({"Listen TCP", listenTcpPort});

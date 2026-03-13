@@ -116,204 +116,203 @@ void ssh_loop(void *pvParameters) {
     disableCore1WDT();
 #endif
     disableLoopWDT();
-
-    if (my_ssh_session == NULL) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH Session creation failed.", true);
-        log_d("SSH Session creation failed.");
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-    ssh_port_char = stringTochar(ssh_port);
-    uint16_t ssh_port_int = atoi(ssh_port_char);
-
-    ssh_options_set(my_ssh_session, SSH_OPTIONS_HOST, ssh_host.c_str());
-    ssh_options_set(my_ssh_session, SSH_OPTIONS_PORT, &ssh_port_int);
-    ssh_options_set(my_ssh_session, SSH_OPTIONS_USER, ssh_user.c_str());
-    log_d("AFTER COMPARE AND OPTION SET");
-
-    if (ssh_connect(my_ssh_session) != SSH_OK) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH Connect error.", true);
-        log_d("SSH Connect error.");
-        ssh_free(my_ssh_session);
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    if (ssh_userauth_password(my_ssh_session, NULL, ssh_password.c_str()) != SSH_AUTH_SUCCESS) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH Authentication error.", true);
-        log_d("SSH Authentication error.");
-        ssh_disconnect(my_ssh_session);
-        ssh_free(my_ssh_session);
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    channel_ssh = ssh_channel_new(my_ssh_session);
-    if (channel_ssh == NULL || ssh_channel_open_session(channel_ssh) != SSH_OK) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH Channel open error.", true);
-        log_d("SSH Channel open error.");
-        ssh_disconnect(my_ssh_session);
-        ssh_free(my_ssh_session);
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    if (ssh_channel_request_pty(channel_ssh) != SSH_OK) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH PTY request error.", true);
-        log_d("SSH PTY request error.");
-        ssh_channel_close(channel_ssh);
-        ssh_channel_free(channel_ssh);
-        ssh_disconnect(my_ssh_session);
-        ssh_free(my_ssh_session);
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    if (ssh_channel_request_shell(channel_ssh) != SSH_OK) {
-        tft.setTextColor(TFT_RED, bruceConfig.bgColor);
-        displayError("SSH Shell request error.", true);
-        log_d("SSH Shell request error.");
-        ssh_channel_close(channel_ssh);
-        ssh_channel_free(channel_ssh);
-        ssh_disconnect(my_ssh_session);
-        ssh_free(my_ssh_session);
-        returnToMenu = true;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    log_d("SSH setup completed.");
-    tft.fillScreen(bruceConfig.bgColor);
-    tft.setTextColor(TFT_WHITE, bruceConfig.bgColor);
-    tft.setTextSize(FP);
+    bool wdtDisabled = true;
+    bool sessionConnected = false;
+    bool showClosedMessage = false;
+    channel_ssh = NULL;
     char buffer[1024];
-    int nbytes;
+    int nbytes = 0;
     keyStroke key;
-    while (1) {
-#ifdef HAS_KEYBOARD
-        key = _getKeyPress();
-        if (key.pressed) {
-            unsigned long currentMillis = millis();
-            if (currentMillis - lastKeyPressMillis >= debounceDelay) {
-                lastKeyPressMillis = currentMillis;
-                for (auto i : key.word) {
-                    commandBuffer += i;
-                    tft.print(i);
-                    cursorY = tft.getCursorY();
-                }
-                if (key.del && commandBuffer.length() > 2) {
-                    commandBuffer.remove(commandBuffer.length() - 1);
-                    tft.setCursor(tft.getCursorX() - 6, tft.getCursorY());
-                    tft.setTextColor(TFT_GREEN, bruceConfig.bgColor);
-                    tft.print(" ");
-                    tft.setCursor(tft.getCursorX() - 6, tft.getCursorY());
-                    cursorY = tft.getCursorY();
-                } else if (key.enter) {
-                    tft.setTextColor(TFT_GREEN);
-                    commandBuffer.trim();
-                    if (commandBuffer.substring(2) == "cls") {
-                        tft.fillScreen(bruceConfig.bgColor);
-                        tft.setCursor(0, 0);
-                        tft.print("> ");
-                        commandBuffer = "> ";
-                    } else {
-                        String message =
-                            commandBuffer.substring(2) + "\r"; // Get the command part, exclude the "> "
-                        ssh_channel_write(channel_ssh, message.c_str(), message.length()); // Send the command
-                    }
-                    cursorY = tft.getCursorY(); // Update cursor position
-                    if (cursorY > tftHeight) {
-                        tft.setCursor(0, tftHeight - 10);
-                        tft.fillRect(0, tftHeight - 11, tftWidth, 11, bruceConfig.bgColor);
-                    }
-                }
-            }
-        }
 
-#else
-        if (check(SelPress)) {
-
-            while (check(SelPress)) { yield(); } // timerless debounce
-            message = keyboard("cls", 76, "SSH Command: ");
-            while (check(SelPress)) { yield(); } // timerless debounce
-            if (message == "cls") {
-                tft.fillScreen(bruceConfig.bgColor);
-                tft.setCursor(0, 0);
-                tft.print("> ");
-            } else {
-                message += "\r";
-                ssh_channel_write(channel_ssh, message.c_str(), message.length()); // Send the command
-                log_d("%s", message);
-            }
-
-            commandBuffer = "> " + message;
-            tft.setCursor(0, 0);
-            tft.setTextSize(FP);
-        }
-
-#endif
-
-        // Read data from SSH server and display it, handling ANSI sequences
-        nbytes = ssh_channel_read_nonblocking(channel_ssh, buffer, sizeof(buffer), 0);
-
-        if (nbytes > 0) {
-            String msg = "";
-            tft.setTextColor(TFT_WHITE);
-            for (int i = 0; i < nbytes; ++i) {
-                msg += char(buffer[i]);
-                if (buffer[i] == '\r') continue; // Ignore carriage return
-                tft.write(buffer[i]);
-                if (tft.getCursorY() > tftHeight) {
-                    tft.fillScreen(bruceConfig.bgColor);
-                    tft.setCursor(0, 0);
-                    tft.setTextColor(TFT_GREEN);
-                    tft.print(commandBuffer); // Move to the next line on display
-                    tft.setTextColor(TFT_WHITE);
-                }
-                cursorY = tft.getCursorY();
-            }
-            log_d("%s", msg);
-
-            cursorY = tft.getCursorY(); // Update cursor position
-            if (cursorY > tftHeight) {
-                tft.setCursor(0, tftHeight - 10);
-                tft.fillRect(0, tftHeight - 11, tftWidth, 11, bruceConfig.bgColor);
-            }
-            commandBuffer = "> "; // Reset command buffer
-            tft.setTextColor(TFT_GREEN);
-        }
-
-        // Handle channel closure and other conditions
-        if (nbytes < 0 || ssh_channel_is_closed(channel_ssh)) {
-            log_d("Encerrando");
+    do {
+        if (my_ssh_session == NULL) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH Session creation failed.", true);
+            log_d("SSH Session creation failed.");
+            returnToMenu = true;
             break;
         }
+        ssh_port_char = stringTochar(ssh_port);
+        uint16_t ssh_port_int = atoi(ssh_port_char);
+
+        ssh_options_set(my_ssh_session, SSH_OPTIONS_HOST, ssh_host.c_str());
+        ssh_options_set(my_ssh_session, SSH_OPTIONS_PORT, &ssh_port_int);
+        ssh_options_set(my_ssh_session, SSH_OPTIONS_USER, ssh_user.c_str());
+        log_d("AFTER COMPARE AND OPTION SET");
+
+        if (ssh_connect(my_ssh_session) != SSH_OK) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH Connect error.", true);
+            log_d("SSH Connect error.");
+            returnToMenu = true;
+            break;
+        }
+        sessionConnected = true;
+
+        if (ssh_userauth_password(my_ssh_session, NULL, ssh_password.c_str()) != SSH_AUTH_SUCCESS) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH Authentication error.", true);
+            log_d("SSH Authentication error.");
+            returnToMenu = true;
+            break;
+        }
+
+        channel_ssh = ssh_channel_new(my_ssh_session);
+        if (channel_ssh == NULL || ssh_channel_open_session(channel_ssh) != SSH_OK) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH Channel open error.", true);
+            log_d("SSH Channel open error.");
+            returnToMenu = true;
+            break;
+        }
+
+        if (ssh_channel_request_pty(channel_ssh) != SSH_OK) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH PTY request error.", true);
+            log_d("SSH PTY request error.");
+            returnToMenu = true;
+            break;
+        }
+
+        if (ssh_channel_request_shell(channel_ssh) != SSH_OK) {
+            tft.setTextColor(TFT_RED, bruceConfig.bgColor);
+            displayError("SSH Shell request error.", true);
+            log_d("SSH Shell request error.");
+            returnToMenu = true;
+            break;
+        }
+
+        log_d("SSH setup completed.");
+        tft.fillScreen(bruceConfig.bgColor);
+        tft.setTextColor(TFT_WHITE, bruceConfig.bgColor);
+        tft.setTextSize(FP);
+        while (1) {
+#ifdef HAS_KEYBOARD
+            key = _getKeyPress();
+            if (key.pressed) {
+                unsigned long currentMillis = millis();
+                if (currentMillis - lastKeyPressMillis >= debounceDelay) {
+                    lastKeyPressMillis = currentMillis;
+                    for (auto i : key.word) {
+                        commandBuffer += i;
+                        tft.print(i);
+                        cursorY = tft.getCursorY();
+                    }
+                    if (key.del && commandBuffer.length() > 2) {
+                        commandBuffer.remove(commandBuffer.length() - 1);
+                        tft.setCursor(tft.getCursorX() - 6, tft.getCursorY());
+                        tft.setTextColor(TFT_GREEN, bruceConfig.bgColor);
+                        tft.print(" ");
+                        tft.setCursor(tft.getCursorX() - 6, tft.getCursorY());
+                        cursorY = tft.getCursorY();
+                    } else if (key.enter) {
+                        tft.setTextColor(TFT_GREEN);
+                        commandBuffer.trim();
+                        if (commandBuffer.substring(2) == "cls") {
+                            tft.fillScreen(bruceConfig.bgColor);
+                            tft.setCursor(0, 0);
+                            tft.print("> ");
+                            commandBuffer = "> ";
+                        } else {
+                            String message =
+                                commandBuffer.substring(2) + "\r"; // Get the command part, exclude the "> "
+                            ssh_channel_write(channel_ssh, message.c_str(), message.length()); // Send the command
+                        }
+                        cursorY = tft.getCursorY(); // Update cursor position
+                        if (cursorY > tftHeight) {
+                            tft.setCursor(0, tftHeight - 10);
+                            tft.fillRect(0, tftHeight - 11, tftWidth, 11, bruceConfig.bgColor);
+                        }
+                    }
+                }
+            }
+
+#else
+            if (check(SelPress)) {
+
+                while (check(SelPress)) { yield(); } // timerless debounce
+                message = keyboard("cls", 76, "SSH Command: ");
+                while (check(SelPress)) { yield(); } // timerless debounce
+                if (message == "cls") {
+                    tft.fillScreen(bruceConfig.bgColor);
+                    tft.setCursor(0, 0);
+                    tft.print("> ");
+                } else {
+                    message += "\r";
+                    ssh_channel_write(channel_ssh, message.c_str(), message.length()); // Send the command
+                    log_d("%s", message);
+                }
+
+                commandBuffer = "> " + message;
+                tft.setCursor(0, 0);
+                tft.setTextSize(FP);
+            }
+
+#endif
+
+            // Read data from SSH server and display it, handling ANSI sequences
+            nbytes = ssh_channel_read_nonblocking(channel_ssh, buffer, sizeof(buffer), 0);
+
+            if (nbytes > 0) {
+                String msg = "";
+                tft.setTextColor(TFT_WHITE);
+                for (int i = 0; i < nbytes; ++i) {
+                    msg += char(buffer[i]);
+                    if (buffer[i] == '\r') continue; // Ignore carriage return
+                    tft.write(buffer[i]);
+                    if (tft.getCursorY() > tftHeight) {
+                        tft.fillScreen(bruceConfig.bgColor);
+                        tft.setCursor(0, 0);
+                        tft.setTextColor(TFT_GREEN);
+                        tft.print(commandBuffer); // Move to the next line on display
+                        tft.setTextColor(TFT_WHITE);
+                    }
+                    cursorY = tft.getCursorY();
+                }
+                log_d("%s", msg);
+
+                cursorY = tft.getCursorY(); // Update cursor position
+                if (cursorY > tftHeight) {
+                    tft.setCursor(0, tftHeight - 10);
+                    tft.fillRect(0, tftHeight - 11, tftWidth, 11, bruceConfig.bgColor);
+                }
+                commandBuffer = "> "; // Reset command buffer
+                tft.setTextColor(TFT_GREEN);
+            }
+
+            // Handle channel closure and other conditions
+            if (nbytes < 0 || ssh_channel_is_closed(channel_ssh)) {
+                log_d("Encerrando");
+                break;
+            }
+        }
+        showClosedMessage = true;
+    } while (0);
+
+    if (channel_ssh != NULL) {
+        ssh_channel_close(channel_ssh);
+        ssh_channel_free(channel_ssh);
+        channel_ssh = NULL;
     }
-    // Clean Up
-    ssh_channel_close(channel_ssh);
-    ssh_channel_free(channel_ssh);
-    ssh_disconnect(my_ssh_session);
-    ssh_free(my_ssh_session);
-    check(SelPress); // Reset Button
-    displayWarning("SSH session closed.", true);
+    if (sessionConnected) { ssh_disconnect(my_ssh_session); }
+    if (my_ssh_session != NULL) {
+        ssh_free(my_ssh_session);
+        my_ssh_session = NULL;
+    }
+    if (showClosedMessage) {
+        check(SelPress); // Reset Button
+        displayWarning("SSH session closed.", true);
+    }
     tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
     returnToMenu = true;
-    enableCore0WDT();
+    if (wdtDisabled) { enableCore0WDT(); }
 #if SOC_CPU_CORES_NUM > 1
-    enableCore1WDT();
+    if (wdtDisabled) { enableCore1WDT(); }
 #endif
-    enableLoopWDT();
-    feedLoopWDT();
+    if (wdtDisabled) {
+        enableLoopWDT();
+        feedLoopWDT();
+    }
     vTaskDelete(NULL);
 }
 

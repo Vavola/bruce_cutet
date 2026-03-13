@@ -23,6 +23,7 @@ StartupApp startupApp;
 
 MainMenu mainMenu;
 SPIClass sdcardSPI;
+static constexpr uint32_t BRUCE_MAX_CPU_MHZ = 240;
 #ifdef USE_HSPI_PORT
 #ifndef VSPI
 #define VSPI FSPI
@@ -392,6 +393,7 @@ void setup() {
         SAFE_STACK_BUFFER_SIZE / 4
     ); // Must be invoked before Serial.begin(). Default is 256 chars
     Serial.begin(115200);
+    setCpuFrequencyMhz(BRUCE_MAX_CPU_MHZ);
 
     log_d("Total heap: %d", ESP.getHeapSize());
     log_d("Free heap: %d", ESP.getFreeHeap());

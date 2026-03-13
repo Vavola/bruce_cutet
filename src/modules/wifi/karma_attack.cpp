@@ -201,7 +201,7 @@ void karma_setup() {
     // Clean shutdown if previous WiFi was active
     if (esp_wifi_stop() == ESP_OK) { safe_wifi_deinit(); }
 
-    delay(200);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
 
     FS *Fs;
     int redraw = true;
@@ -352,7 +352,7 @@ void karma_setup() {
                                                          esp_wifi_set_promiscuous(false);
                                                          esp_wifi_stop();
                                                          esp_wifi_deinit(); // Critical for clean restart
-                                                         delay(500);
+                                                         vTaskDelay(500 / portTICK_PERIOD_MS);
                                                          // EvilPortal(probe.ssid, probe.channel, false,
                                                          // false);
                                                          wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -422,7 +422,7 @@ void karma_setup() {
             );
         }
 
-        delay(5);
+        vTaskDelay(5 / portTICK_PERIOD_MS);
 
         if (currentTime - last_time > 100) tft.drawPixel(0, 0, 0);
 

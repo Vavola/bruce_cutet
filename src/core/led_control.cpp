@@ -120,7 +120,7 @@ void blinkLed(int blinkTime) {
     analogWrite(CYD_LED_G, 255 - (255 * bright));
     analogWrite(CYD_LED_B, 255 - (255 * bright));
 
-    delay(blinkTime);
+    vTaskDelay(blinkTime / portTICK_PERIOD_MS);
     bruceConfig.ledEffect = oldEffect;
     ledSetup();
 }

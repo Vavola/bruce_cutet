@@ -66,7 +66,9 @@ void ScrollableTextArea::scrollToLine(size_t lineNumber) {
 }
 
 String ScrollableTextArea::getLine(size_t lineNumber) {
-    return linesBuffer[(lineNumber >= linesBuffer.size()) ? linesBuffer.size() : lineNumber];
+    if (linesBuffer.empty()) return "";
+    if (lineNumber >= linesBuffer.size()) return linesBuffer.back();
+    return linesBuffer[lineNumber];
 }
 
 size_t ScrollableTextArea::getMaxLines() { return linesBuffer.size(); }

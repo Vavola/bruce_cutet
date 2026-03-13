@@ -2,6 +2,7 @@
 #define __WIFI_ATKS_H__
 
 #include <WiFi.h>
+#include <esp_attr.h>
 
 extern wifi_ap_record_t ap_record;
 
@@ -21,7 +22,7 @@ extern uint8_t targetBssid[6];
  * @param size size of frame buffer
  */
 static const uint8_t _default_target[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-void wsl_bypasser_send_raw_frame(
+void IRAM_ATTR wsl_bypasser_send_raw_frame(
     const wifi_ap_record_t *ap_record, uint8_t chan, const uint8_t target[6] = _default_target
 );
 
@@ -34,7 +35,7 @@ void wsl_bypasser_send_raw_frame(
  * @param ap_record AP record with valid AP information
  * @param chan Channel of the targetted AP
  */
-void send_raw_frame(const uint8_t *frame_buffer, int size);
+void IRAM_ATTR send_raw_frame(const uint8_t *frame_buffer, int size);
 
 void wifi_atk_info(String tssid, String mac, uint8_t channel);
 

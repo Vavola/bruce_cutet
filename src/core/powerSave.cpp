@@ -4,6 +4,7 @@
 
 /* Check if it's time to put the device to sleep */
 #define SCREEN_OFF_DELAY 5000
+static constexpr uint32_t BRUCE_MAX_CPU_MHZ = 240;
 
 void fadeOutScreen(int startValue) {
     for (int brightValue = startValue; brightValue >= 0; brightValue -= 1) {
@@ -49,7 +50,7 @@ void sleepModeOn() {
 
 void sleepModeOff() {
     isSleeping = false;
-    setCpuFrequencyMhz(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
+    setCpuFrequencyMhz(BRUCE_MAX_CPU_MHZ);
 
     panelSleep(false); // wake the screen back up
 

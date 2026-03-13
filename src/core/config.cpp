@@ -107,6 +107,7 @@ void BruceConfig::fromFile(bool checkFS) {
     JsonDocument jsonDoc;
     if (deserializeJson(jsonDoc, file)) {
         Serial.println("Failed to read config file, using default configuration");
+        file.close();
         return;
     }
     file.close();
