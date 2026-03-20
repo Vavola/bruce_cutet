@@ -2,12 +2,28 @@
 #include "esp_mac.h"
 #include "sd_functions.h"
 #include <globals.h>
+
+namespace {
+gpio_num_t sanitizePin(gpio_num_t pin) {
+    if (pin == GPIO_NUM_NC) return GPIO_NUM_NC;
+
+    const int rawPin = static_cast<int>(pin);
+    if (rawPin < 0 || rawPin >= GPIO_NUM_MAX || rawPin > GPIO_PIN_COUNT) {
+        return GPIO_NUM_NC;
+    }
+
+    return pin;
+}
+} // namespace
+
 String getMacAddress() {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
     char macStr[18];
-    sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(
+        macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    );
 
     return String(macStr);
 }
@@ -264,7 +280,6 @@ void BruceConfigPins::loadFile(JsonDocument &jsonDoc, bool checkFS) {
     }
     file.close();
 
-    serializeJsonPretty(jsonDoc, Serial);
 }
 
 void BruceConfigPins::fromFile(bool checkFS) {
@@ -278,8 +293,6 @@ void BruceConfigPins::fromFile(bool checkFS) {
 void BruceConfigPins::createFile() {
     JsonDocument jsonDoc;
     toJson(jsonDoc.to<JsonObject>());
-    serializeJsonPretty(jsonDoc, Serial);
-
     // Open file for writing
     FS *fs = &LittleFS;
     File file = fs->open(filepath, FILE_WRITE);
@@ -358,7 +371,7 @@ void BruceConfigPins::setLoRaPins(SPIPins value) {
     saveFile();
 }
 void BruceConfigPins::setW5500Pins(SPIPins value) {
-    LoRa_bus = value;
+    W5500_bus = value;
     validateSpiPins(W5500_bus);
     saveFile();
 }
@@ -381,37 +394,37 @@ void BruceConfigPins::setSDCardPins(SPIPins value) {
     saveFile();
 }
 
-void BruceConfigPins::setSpiPins(SPIPins value) {
+void BruceConfigPins::setSpiPins(SPIPins &value) {
     validateSpiPins(value);
     saveFile();
 }
 
-void BruceConfigPins::setI2CPins(I2CPins value) {
+void BruceConfigPins::setI2CPins(I2CPins &value) {
     validateI2CPins(value);
     saveFile();
 }
 
-void BruceConfigPins::setUARTPins(UARTPins value) {
+void BruceConfigPins::setUARTPins(UARTPins &value) {
     validateUARTPins(value);
     saveFile();
 }
-void BruceConfigPins::validateSpiPins(SPIPins value) {
-    if (value.sck < 0 || value.sck > GPIO_PIN_COUNT) value.sck = GPIO_NUM_NC;
-    if (value.miso < 0 || value.miso > GPIO_PIN_COUNT) value.miso = GPIO_NUM_NC;
-    if (value.mosi < 0 || value.mosi > GPIO_PIN_COUNT) value.mosi = GPIO_NUM_NC;
-    if (value.cs < 0 || value.cs > GPIO_PIN_COUNT) value.cs = GPIO_NUM_NC;
-    if (value.io0 < 0 || value.io0 > GPIO_PIN_COUNT) value.io0 = GPIO_NUM_NC;
-    if (value.io2 < 0 || value.io2 > GPIO_PIN_COUNT) value.io2 = GPIO_NUM_NC;
+void BruceConfigPins::validateSpiPins(SPIPins &value) {
+    value.sck = sanitizePin(value.sck);
+    value.miso = sanitizePin(value.miso);
+    value.mosi = sanitizePin(value.mosi);
+    value.cs = sanitizePin(value.cs);
+    value.io0 = sanitizePin(value.io0);
+    value.io2 = sanitizePin(value.io2);
 }
 
-void BruceConfigPins::validateI2CPins(I2CPins value) {
-    if (value.sda < 0 || value.sda > GPIO_PIN_COUNT) value.sda = GPIO_NUM_NC;
-    if (value.scl < 0 || value.scl > GPIO_PIN_COUNT) value.scl = GPIO_NUM_NC;
+void BruceConfigPins::validateI2CPins(I2CPins &value) {
+    value.sda = sanitizePin(value.sda);
+    value.scl = sanitizePin(value.scl);
 }
 
-void BruceConfigPins::validateUARTPins(UARTPins value) {
-    if (value.rx < 0 || value.rx > GPIO_PIN_COUNT) value.rx = GPIO_NUM_NC;
-    if (value.tx < 0 || value.tx > GPIO_PIN_COUNT) value.tx = GPIO_NUM_NC;
+void BruceConfigPins::validateUARTPins(UARTPins &value) {
+    value.rx = sanitizePin(value.rx);
+    value.tx = sanitizePin(value.tx);
 }
 
 void BruceConfigPins::setRotation(int value) {

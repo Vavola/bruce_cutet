@@ -34,7 +34,7 @@ extern "C" int ieee80211_raw_frame_sanity_check(int32_t arg, int32_t arg2, int32
     else return 0;
 }
 
-uint8_t deauth_frame[sizeof(deauth_frame_default)]; // 26 = [sizeof(deauth_frame_default[])]
+DRAM_ATTR uint8_t deauth_frame[sizeof(deauth_frame_default)]; // 26 = [sizeof(deauth_frame_default[])]
 
 wifi_ap_record_t ap_record;
 
@@ -75,6 +75,7 @@ const uint8_t beaconPacketTemplate[BEACON_PKT_LEN] = {
     /*103 -106 */ 0x00, 0x0f, 0xac, 0x02,
     /*107 -108 */ 0x00, 0x00
 };
+static DRAM_ATTR uint8_t beaconPacketScratch[BEACON_PKT_LEN];
 // clang-format on
 static inline void prepareBeaconPacket(
     uint8_t outPacket[BEACON_PKT_LEN], const uint8_t macAddr[6], const char *ssid, uint8_t ssidLen,
@@ -116,7 +117,7 @@ void nextChannel() {
 ** Function: send_raw_frame
 ** @brief: Broadcasts deauth frames
 ***************************************************************************************/
-void send_raw_frame(const uint8_t *frame_buffer, int size) {
+void IRAM_ATTR send_raw_frame(const uint8_t *frame_buffer, int size) {
     esp_wifi_80211_tx(WIFI_IF_AP, frame_buffer, size, false);
     vTaskDelay(1 / portTICK_RATE_MS);
     esp_wifi_80211_tx(WIFI_IF_AP, frame_buffer, size, false);
@@ -129,7 +130,7 @@ void send_raw_frame(const uint8_t *frame_buffer, int size) {
 ** function: wsl_bypasser_send_raw_frame
 ** @brief: prepare the frame to deploy the attack
 ***************************************************************************************/
-void wsl_bypasser_send_raw_frame(const wifi_ap_record_t *ap_record, uint8_t chan, const uint8_t target[6]) {
+void IRAM_ATTR wsl_bypasser_send_raw_frame(const wifi_ap_record_t *ap_record, uint8_t chan, const uint8_t target[6]) {
     Serial.print("\nPreparing deauth frame to AP -> ");
     for (int j = 0; j < 6; j++) {
         Serial.print(ap_record->bssid[j], HEX);
@@ -319,6 +320,8 @@ void wifi_atk_menu() {
         nets = WiFi.scanNetworks(false, showHiddenNetworks);
         ap_records.clear();
         options = {};
+        options.reserve(nets + 2);
+        ap_records.reserve(nets);
         for (int i = 0; i < nets; i++) {
             wifi_ap_record_t record;
             memset(&record, 0, sizeof(record));
@@ -345,8 +348,8 @@ void wifi_atk_menu() {
             int encryptionType = WiFi.encryptionType(i);
             int32_t rssi = WiFi.RSSI(i);
             int32_t ch = WiFi.channel(i);
-            String encryptionPrefix = (encryptionType == WIFI_AUTH_OPEN) ? "" : "#";
-            String encryptionTypeStr;
+            const char *encryptionPrefix = (encryptionType == WIFI_AUTH_OPEN) ? "" : "#";
+            const char *encryptionTypeStr = "Unknown";
             switch (encryptionType) {
                 case WIFI_AUTH_OPEN: encryptionTypeStr = "Open"; break;
                 case WIFI_AUTH_WEP: encryptionTypeStr = "WEP"; break;
@@ -364,10 +367,19 @@ void wifi_atk_menu() {
                 displaySSID = "<Hidden SSID> " + WiFi.BSSIDstr(i);
             }
 
-            String optionText = encryptionPrefix + displaySSID + " (" + String(rssi) + "|" +
-                                encryptionTypeStr + "|ch." + String(ch) + ")";
+            char optionText[128];
+            snprintf(
+                optionText,
+                sizeof(optionText),
+                "%s%s (%d|%s|ch.%d)",
+                encryptionPrefix,
+                displaySSID.c_str(),
+                (int)rssi,
+                encryptionTypeStr,
+                (int)ch
+            );
 
-            options.push_back({optionText.c_str(), [=]() {
+            options.push_back({optionText, [=]() {
                                    ap_record = ap_records[i];
                                    target_atk_menu(
                                        ssid, // <--- Передаем очищенное имя
@@ -512,8 +524,9 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
     if (safeSsid.length() == 0) safeSsid = "UNKNOWN";
 
     char hsFileName[128];
-    sprintf(
+    snprintf(
         hsFileName,
+        sizeof(hsFileName),
         "/BrucePCAP/handshakes/HS_%02X%02X%02X%02X%02X%02X_%s.pcap",
         bssid_array[0],
         bssid_array[1],
@@ -648,8 +661,9 @@ void capture_handshake(String tssid, String mac, uint8_t channel) {
             for (auto const &kv : clientsCopy) {
                 uint64_t key = kv.first;
                 char macStr[40];
-                sprintf(
+                snprintf(
                     macStr,
+                    sizeof(macStr),
                     " - %02X:%02X:%02X:%02X:%02X:%02X",
                     (uint8_t)(key >> 40),
                     (uint8_t)(key >> 32),
@@ -928,7 +942,6 @@ const char rickrollssids[] PROGMEM = {"01 Never gonna give you up\n"
                                       "08 and hurt you\n"};
 
 void beaconSpamList(const char list[]) {
-    uint8_t beaconPacket[BEACON_PKT_LEN];
     uint8_t macAddr[6];
     int i = 0;
     int ssidsLen = strlen_P(list);
@@ -952,11 +965,11 @@ void beaconSpamList(const char list[]) {
 
         // generate MAC and prepare packet
         generateRandomWiFiMac(macAddr);
-        prepareBeaconPacket(beaconPacket, macAddr, ssidBuf, ssidLen, wifi_channel, true);
+        prepareBeaconPacket(beaconPacketScratch, macAddr, ssidBuf, ssidLen, wifi_channel, true);
 
         // send 2 packets instead of 3 (makes devices show more networks)
         for (int k = 0; k < 2; k++) {
-            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, BEACON_PKT_LEN, 0);
+            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacketScratch, BEACON_PKT_LEN, 0);
             vTaskDelay(1 / portTICK_PERIOD_MS);
         }
 
@@ -967,7 +980,6 @@ void beaconSpamList(const char list[]) {
 }
 
 void beaconSpamSingle(String baseSSID) {
-    uint8_t beaconPacket[BEACON_PKT_LEN];
     uint8_t macAddr[6];
     int counter = 1;
 
@@ -982,11 +994,11 @@ void beaconSpamSingle(String baseSSID) {
 
         // prepare packet
         generateRandomWiFiMac(macAddr);
-        prepareBeaconPacket(beaconPacket, macAddr, currentSSID.c_str(), ssidLen, wifi_channel, true);
+        prepareBeaconPacket(beaconPacketScratch, macAddr, currentSSID.c_str(), ssidLen, wifi_channel, true);
 
         // send 2 packets
         for (int k = 0; k < 2; k++) {
-            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacket, BEACON_PKT_LEN, 0);
+            esp_wifi_80211_tx(WIFI_IF_STA, beaconPacketScratch, BEACON_PKT_LEN, 0);
             vTaskDelay(1 / portTICK_PERIOD_MS);
         }
 

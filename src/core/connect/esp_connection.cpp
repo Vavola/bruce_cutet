@@ -5,14 +5,31 @@
 // Initialize the static instance pointer
 EspConnection *EspConnection::instance = nullptr;
 std::vector<Option> peerOptions;
+static constexpr size_t ESPNOW_RECV_QUEUE_LEN = 16;
+static constexpr size_t ESPNOW_PEER_QUEUE_LEN = 8;
+struct PeerMac {
+    uint8_t mac[6];
+};
 
-EspConnection::EspConnection() { setInstance(this); }
+EspConnection::EspConnection() {
+    setInstance(this);
+    if (!recvQueue) recvQueue = xQueueCreate(ESPNOW_RECV_QUEUE_LEN, sizeof(Message));
+    if (!peerQueue) peerQueue = xQueueCreate(ESPNOW_PEER_QUEUE_LEN, sizeof(PeerMac));
+}
 
 EspConnection::~EspConnection() {
     esp_now_unregister_send_cb();
     esp_now_unregister_recv_cb();
 
     esp_now_deinit();
+    if (recvQueue) {
+        vQueueDelete(recvQueue);
+        recvQueue = nullptr;
+    }
+    if (peerQueue) {
+        vQueueDelete(peerQueue);
+        peerQueue = nullptr;
+    }
 }
 
 bool EspConnection::beginSend() {
@@ -21,10 +38,12 @@ bool EspConnection::beginSend() {
     if (!beginEspnow()) return false;
 
     sendPing();
+    buildPeerOptions();
 
     loopOptions(peerOptions);
 
     peerOptions.clear();
+    peerEntries.clear();
 
     if (!setupPeer(dstAddress)) {
         displayError("Failed to add peer");
@@ -78,6 +97,8 @@ EspConnection::Message EspConnection::createFileMessage(File file) {
 
     strncpy(message.filename, file.name(), ESP_FILENAME_SIZE);
     strncpy(message.filepath, path.substring(0, path.lastIndexOf("/")).c_str(), ESP_FILEPATH_SIZE);
+    message.filename[ESP_FILENAME_SIZE - 1] = '\0';
+    message.filepath[ESP_FILEPATH_SIZE - 1] = '\0';
 
     return message;
 }
@@ -97,9 +118,7 @@ EspConnection::Message EspConnection::createPongMessage() {
 }
 
 void EspConnection::sendPing() {
-    peerOptions = {
-        {"Broadcast", [this]() { setDstAddress(broadcastAddress); }},
-    };
+    if (peerQueue) xQueueReset(peerQueue);
 
     Message message = createPingMessage();
 
@@ -107,6 +126,36 @@ void EspConnection::sendPing() {
     if (response != ESP_OK) { Serial.printf("Send ping response: %s\n", esp_err_to_name(response)); }
 
     delay(500);
+}
+
+void EspConnection::buildPeerOptions() {
+    peerOptions.clear();
+    peerEntries.clear();
+
+    peerOptions.push_back({"Broadcast", [this]() { setDstAddress(broadcastAddress); }});
+
+    if (!peerQueue) return;
+
+    PeerMac pm = {};
+    while (xQueueReceive(peerQueue, &pm, 0) == pdTRUE) {
+        bool exists = false;
+        for (const auto &e : peerEntries) {
+            if (memcmp(e.mac, pm.mac, 6) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) continue;
+
+        PeerEntry entry = {};
+        memcpy(entry.mac, pm.mac, 6);
+        entry.label = macToString(pm.mac);
+        peerEntries.push_back(entry);
+    }
+
+    for (size_t i = 0; i < peerEntries.size(); ++i) {
+        peerOptions.push_back({peerEntries[i].label.c_str(), [this, i]() { setDstAddress(peerEntries[i].mac); }});
+    }
 }
 
 void EspConnection::sendPong(const uint8_t *mac) {
@@ -174,7 +223,10 @@ String EspConnection::macToString(const uint8_t *mac) {
 }
 
 void EspConnection::appendPeerToList(const uint8_t *mac) {
-    peerOptions.push_back({macToString(mac).c_str(), [this, mac]() { setDstAddress(mac); }});
+    if (!peerQueue) return;
+    PeerMac peer = {};
+    memcpy(peer.mac, mac, 6);
+    xQueueSend(peerQueue, &peer, 0);
 }
 
 void EspConnection::onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
@@ -199,7 +251,7 @@ void EspConnection::onDataRecv(const uint8_t *mac, const uint8_t *incomingData, 
     if (recvMessage.ping) return sendPong(mac);
     if (recvMessage.pong) return appendPeerToList(mac);
 
-    recvQueue.push_back(recvMessage);
+    if (recvQueue) xQueueSend(recvQueue, &recvMessage, 0);
 }
 
 void EspConnection::onDataSentStatic(const wifi_tx_info_t *info, esp_now_send_status_t status) {

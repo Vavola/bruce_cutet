@@ -61,7 +61,7 @@ void EspSerialCmd::receiveCommands() {
     padprintln("Waiting...");
 
     recvCommand = "";
-    recvQueue.clear();
+    xQueueReset(recvQueue);
     recvStatus = CONNECTING;
     Message recvMessage;
 
@@ -85,10 +85,7 @@ void EspSerialCmd::receiveCommands() {
             recvStatus = WAITING;
         }
 
-        if (!recvQueue.empty()) {
-            recvMessage = recvQueue.front();
-            recvQueue.erase(recvQueue.begin());
-
+        if (xQueueReceive(recvQueue, &recvMessage, 0) == pdTRUE) {
             recvCommand = recvMessage.data;
             Serial.println(recvCommand);
 

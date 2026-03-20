@@ -11,6 +11,7 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "lwip/err.h"
 #include "nvs_flash.h"
 #include <set>
@@ -53,6 +54,96 @@ String filen = "";
 
 std::vector<ProbeRequest> probeRequests;
 
+namespace {
+constexpr size_t PROBE_SSID_MAX_LEN = 32;
+constexpr size_t PROBE_QUEUE_DEPTH = 32;
+
+struct ProbeEvent {
+    int8_t rssi = 0;
+    uint8_t channel = 0;
+    uint32_t timestamp = 0;
+    uint8_t mac[6] = {0};
+    char ssid[PROBE_SSID_MAX_LEN + 1] = {0};
+};
+
+QueueHandle_t probeQueue = nullptr;
+
+void formatMac(const uint8_t mac[6], char out[18]) {
+    snprintf(
+        out, 18, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+    );
+}
+
+bool extractProbeEvent(const wifi_promiscuous_pkt_t *packet, ProbeEvent &event) {
+    if (!packet) return false;
+
+    const uint8_t *frame = packet->payload;
+    const int sigLen = packet->rx_ctrl.sig_len;
+    if (sigLen <= 24) return false;
+
+    const uint8_t frameType = (frame[0] & 0x0C) >> 2;
+    const uint8_t frameSubType = (frame[0] & 0xF0) >> 4;
+    if (frameType != 0x00 || frameSubType != 0x04) return false;
+
+    int pos = 24;
+    while (pos + 1 < sigLen) {
+        const uint8_t tag = frame[pos++];
+        const uint8_t len = frame[pos++];
+
+        if (pos + len > sigLen) return false;
+        if (tag == 0x00 && len > 0) {
+            if (len > PROBE_SSID_MAX_LEN) return false;
+
+            for (uint8_t i = 0; i < len; ++i) {
+                if (!isPrintable(frame[pos + i])) return false;
+            }
+
+            memcpy(event.ssid, frame + pos, len);
+            event.ssid[len] = '\0';
+            memcpy(event.mac, frame + 10, sizeof(event.mac));
+            event.rssi = packet->rx_ctrl.rssi;
+            event.timestamp = packet->rx_ctrl.timestamp / 1000U;
+            event.channel = all_wifi_channels[channl];
+            return true;
+        }
+
+        pos += len;
+    }
+
+    return false;
+}
+
+void drainProbeQueue() {
+    if (!probeQueue) return;
+
+    ProbeEvent event;
+    while (xQueueReceive(probeQueue, &event, 0) == pdTRUE) {
+        char macBuf[18];
+        formatMac(event.mac, macBuf);
+
+        String mac(macBuf);
+        String ssid(event.ssid);
+        if (ssid.length() == 0) continue;
+
+        String key;
+        key.reserve(mac.length() + ssid.length());
+        key += mac;
+        key += ssid;
+
+        if (uniqueProbes.insert(key).second) {
+            ProbeRequest probe;
+            probe.mac = mac;
+            probe.ssid = ssid;
+            probe.rssi = event.rssi;
+            probe.timestamp = event.timestamp;
+            probe.channel = event.channel;
+            probeRequests.push_back(probe);
+            pkt_counter++;
+        }
+    }
+}
+} // namespace
+
 //===== FUNCTIONS =====//
 
 String generateUniqueFilename(FS &fs) {
@@ -91,50 +182,6 @@ bool isProbeRequestWithSSID(const wifi_promiscuous_pkt_t *packet) {
     return false;
 }
 
-String extractSSID(const wifi_promiscuous_pkt_t *packet) {
-    const uint8_t *frame = packet->payload;
-    int pos = 24;
-
-    while (pos < packet->rx_ctrl.sig_len - 2) {
-        uint8_t tag = frame[pos];
-        uint8_t len = frame[pos + 1];
-
-        if (tag == 0x00 && len > 0 && (pos + 2 + len <= packet->rx_ctrl.sig_len)) {
-            for (int i = 0; i < len; i++) {
-                char c = frame[pos + 2 + i];
-                if (!isPrintable(c)) return ""; // discard SSID if it has any non-printable char
-            }
-
-            char ssid[len + 1];
-            memcpy(ssid, &frame[pos + 2], len);
-            ssid[len] = '\0';
-            return String(ssid);
-        }
-
-        pos += len + 2;
-    }
-
-    return "";
-}
-
-// Extract MAC address from probe request
-String extractMAC(const wifi_promiscuous_pkt_t *packet) {
-    const uint8_t *frame = packet->payload;
-    char mac[18];
-    snprintf(
-        mac,
-        sizeof(mac),
-        "%02X:%02X:%02X:%02X:%02X:%02X",
-        frame[10],
-        frame[11],
-        frame[12],
-        frame[13],
-        frame[14],
-        frame[15]
-    );
-    return String(mac);
-}
-
 // Get all unique probe requests with SSID
 std::vector<ProbeRequest> getUniqueProbes() {
     std::vector<ProbeRequest> unique;
@@ -157,35 +204,20 @@ void clearProbes() {
     probeRequests.clear();
     uniqueProbes.clear();
     pkt_counter = 0;
+    if (probeQueue) xQueueReset(probeQueue);
 }
 
 // Packet callback function - ONLY PROCESSES PROBES WITH SSID
 void probe_sniffer(void *buf, wifi_promiscuous_pkt_type_t type) {
-    wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
-    wifi_pkt_rx_ctrl_t ctrl = (wifi_pkt_rx_ctrl_t)pkt->rx_ctrl;
+    (void)type;
+    if (!probeQueue) return;
 
-    if (isProbeRequestWithSSID(pkt)) {
-        String mac = extractMAC(pkt);
-        String ssid = extractSSID(pkt);
-        if (ssid.length() == 0) return;
+    ProbeEvent event;
+    if (!extractProbeEvent(static_cast<const wifi_promiscuous_pkt_t *>(buf), event)) return;
 
-        String key = mac + ssid;
-        if (uniqueProbes.find(key) == uniqueProbes.end()) {
-            uniqueProbes.insert(key);
-
-            ProbeRequest probe;
-            probe.mac = mac;
-            probe.ssid = ssid;
-            probe.rssi = ctrl.rssi;
-            probe.timestamp = millis();
-            probe.channel = all_wifi_channels[channl]; // <-- Current channel
-
-            probeRequests.push_back(probe);
-            pkt_counter++;
-            // Print to serial for debugging
-            Serial.printf("[PROBE] MAC: %s, SSID: %s, RSSI: %d\n", mac.c_str(), ssid.c_str(), ctrl.rssi);
-        }
-    }
+    BaseType_t taskWoken = pdFALSE;
+    xQueueSendFromISR(probeQueue, &event, &taskWoken);
+    if (taskWoken) portYIELD_FROM_ISR();
 }
 
 //===== SETUP =====//
@@ -201,7 +233,7 @@ void karma_setup() {
     // Clean shutdown if previous WiFi was active
     if (esp_wifi_stop() == ESP_OK) { safe_wifi_deinit(); }
 
-    delay(200);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
 
     FS *Fs;
     int redraw = true;
@@ -227,6 +259,11 @@ void karma_setup() {
 
     // Clear previous data
     clearProbes();
+    if (!probeQueue) probeQueue = xQueueCreate(PROBE_QUEUE_DEPTH, sizeof(ProbeEvent));
+    if (!probeQueue) {
+        displayError("Probe queue alloc failed", true);
+        return;
+    }
 
     nvs_flash_init();
     ESP_ERROR_CHECK(esp_netif_init());
@@ -252,6 +289,8 @@ void karma_setup() {
     if (is_LittleFS && !checkLittleFsSize()) goto Exit;
 
     for (;;) {
+        drainProbeQueue();
+
         if (returnToMenu) { // if it happened, LittleFS is full or user exited
             if (!checkLittleFsSize()) {
                 Serial.println("Not enough space on LittleFS");
@@ -352,7 +391,7 @@ void karma_setup() {
                                                          esp_wifi_set_promiscuous(false);
                                                          esp_wifi_stop();
                                                          esp_wifi_deinit(); // Critical for clean restart
-                                                         delay(500);
+                                                         vTaskDelay(500 / portTICK_PERIOD_MS);
                                                          // EvilPortal(probe.ssid, probe.channel, false,
                                                          // false);
                                                          wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -422,7 +461,7 @@ void karma_setup() {
             );
         }
 
-        delay(5);
+        vTaskDelay(5 / portTICK_PERIOD_MS);
 
         if (currentTime - last_time > 100) tft.drawPixel(0, 0, 0);
 

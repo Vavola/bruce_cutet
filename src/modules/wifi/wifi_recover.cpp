@@ -140,7 +140,7 @@ static bool parse_pcap_handshake(FS &fs, const String &path, HandshakeData &hs) 
     // Bruce uses network type 105 (802.11 raw, no radiotap)
     if (gh.network != 105) { padprintf("Warning: Network type %u (expected 105)\n", gh.network); }
 
-    bool have_m1 = false, have_m2 = false, have_m3 = false, have_m4 = false;
+    bool have_m1 = false, have_m2 = false, have_m3 = false;
     bool have_beacon = false;
     const size_t MAX_PKT_READ = 8192;
     int packet_count = 0;
@@ -302,7 +302,6 @@ static bool parse_pcap_handshake(FS &fs, const String &path, HandshakeData &hs) 
             have_m3 = true;
             ESP_LOGI(TAG, "Found M3 (ANonce)");
         } else if (msg_num == 4) {
-            have_m4 = true;
             ESP_LOGI(TAG, "Found M4");
         }
 

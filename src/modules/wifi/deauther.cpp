@@ -9,23 +9,9 @@
 #include <esp_wifi.h>
 #include <esp_wifi_types.h>
 #include <globals.h>
-#include <iomanip>
-#include <iostream>
-#include <lwip/dns.h>
-#include <lwip/err.h>
 #include <lwip/etharp.h>
-#include <lwip/igmp.h>
-#include <lwip/inet.h>
-#include <lwip/init.h>
 #include <lwip/ip_addr.h>
-#include <lwip/mem.h>
-#include <lwip/memp.h>
-#include <lwip/netif.h>
-#include <lwip/sockets.h>
-#include <lwip/sys.h>
-#include <lwip/timeouts.h>
 #include <modules/wifi/sniffer.h>
-#include <sstream>
 
 // Função para obter o MAC do gateway (ORIGINAL - DON'T CHANGE)
 void getGatewayMAC(uint8_t gatewayMAC[6]) {

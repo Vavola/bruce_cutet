@@ -1618,6 +1618,12 @@ bool drawImg(FS &fs, String filename, int x, int y, bool center, int playDuratio
 #if !defined(LITE_VERSION)
 /// Draw PNG files
 
+#ifdef INTELSHORT
+#undef INTELSHORT
+#endif
+#ifdef INTELLONG
+#undef INTELLONG
+#endif
 #include <PNGdec.h>
 #if TFT_WIDTH > TFT_HEIGHT
 #define MAX_IMAGE_WIDTH TFT_WIDTH

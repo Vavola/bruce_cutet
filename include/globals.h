@@ -16,8 +16,8 @@
 #include "core/serial_commands/cli.h"
 #include "core/startup_app.h"
 #include <Arduino.h>
+#include <freertos/task.h>
 #include <ESP32Time.h>
-#include <LittleFS.h>
 #include <NTPClient.h>
 #include <SPI.h>
 #include <functional>
@@ -56,12 +56,7 @@ extern SerialDisplayClass &draw;
 extern BQ27220 bq;
 #endif
 
-#ifdef USE_BQ25896
-#include <XPowersLib.h>
-extern XPowersPPM PPM;
-#endif
-
-#ifdef USE_BOOST /// to avoid t embed toggle otg on some codes
+#if defined(USE_BQ25896) || defined(USE_BOOST) /// to avoid t embed toggle otg on some codes
 #include <XPowersLib.h>
 extern XPowersPPM PPM;
 #endif
@@ -75,7 +70,7 @@ extern SerialDevice *serialDevice;
 extern USBSerial USBserial;
 extern StartupApp startupApp;
 
-extern char timeStr[12];
+extern char timeStr[16];
 extern SPIClass sdcardSPI;
 
 extern bool clock_set;
@@ -136,9 +131,9 @@ struct keyStroke { // DO NOT CHANGE IT!!!!!
         fn = false;
         del = false;
         enter = false;
-        bool alt = false;
-        bool ctrl = false;
-        bool gui = false;
+        alt = false;
+        ctrl = false;
+        gui = false;
         modifiers = 0;
         word.clear();
         hid_keys.clear();

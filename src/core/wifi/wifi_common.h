@@ -1,5 +1,3 @@
-#include "core/display.h"
-#include <NTPClient.h>
 #include <WiFi.h>
 
 #ifndef __WIFI_COMMON_H__

@@ -3,7 +3,7 @@
 
 #include "menu_items/ConfigMenu.h"
 #include "menu_items/FileMenu.h"
-
+#include "menu_items/NRF24.h"
 #include "menu_items/WifiMenu.h"
 #include <MenuItemInterface.h>
 class MainMenu {
@@ -11,7 +11,7 @@ public:
     FileMenu fileMenu;
     WifiMenu wifiMenu;
     ConfigMenu configMenu;
-
+    NRF24Menu nrf24Menu;
     MainMenu();
     ~MainMenu();
 

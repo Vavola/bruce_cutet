@@ -1,6 +1,8 @@
 #ifndef __ESP_CONNECTION_H__
 #define __ESP_CONNECTION_H__
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <esp_now.h>
 #include <globals.h>
 #include <vector>
@@ -38,6 +40,10 @@ public:
             : dataSize(0), totalBytes(0), bytesSent(0), isFile(false), done(false), ping(false), pong(false) {
         }
     };
+    struct PeerEntry {
+        uint8_t mac[6];
+        String label;
+    };
 
     EspConnection();
     ~EspConnection();
@@ -52,7 +58,9 @@ protected:
     Status sendStatus;
     uint8_t dstAddress[6];
     uint8_t broadcastAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    std::vector<Message> recvQueue;
+    QueueHandle_t recvQueue = nullptr;
+    QueueHandle_t peerQueue = nullptr;
+    std::vector<PeerEntry> peerEntries;
 
     bool beginSend();
     bool beginEspnow();
@@ -64,6 +72,7 @@ protected:
 
     void sendPing();
     void sendPong(const uint8_t *mac);
+    void buildPeerOptions();
 
     bool setupPeer(const uint8_t *mac);
     void appendPeerToList(const uint8_t *mac);

@@ -273,14 +273,14 @@ void extractAndPrintHash(uint8_t* pkt, uint32_t smbLength, uint8_t* ntlm) {
   // 4. Server challenge (8 bytes)
   char challHex[17];
   for (int i = 0; i < 8; ++i)
-    sprintf(challHex + 2*i, "%02X", smbState.challenge[i]);
+    snprintf(challHex + 2*i, 3, "%02X", smbState.challenge[i]);
   challHex[16] = '\0';
 
   // 5. Full NTLMv2 response en hex
   String ntRespHex;
   for (uint16_t i = 0; i < ntRespLen; ++i) {
     char h[3];
-    sprintf(h, "%02X", pkt[base + ntRespOff + i]);
+    snprintf(h, sizeof(h), "%02X", pkt[base + ntRespOff + i]);
     ntRespHex += h;
   }
 
@@ -772,7 +772,7 @@ void responder() {
 
   // Accepter nouvelle connexion SMB si non déjà en cours
   if (!smbState.active) {
-    WiFiClient newClient = smbServer.available();
+    WiFiClient newClient = smbServer.accept();
     if (newClient) {
       smbState.client = newClient;
       smbState.active = true;
@@ -1012,4 +1012,3 @@ void responder() {
   //waitAndReturnToMenu("Return to menu");
   returnToMenu = true;
 }
-

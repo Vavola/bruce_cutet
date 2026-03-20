@@ -19,6 +19,7 @@
 // #include "esp_event_loop.h"
 #include "driver/gpio.h"
 #include "nvs_flash.h"
+#include <cstddef>
 #include <algorithm>
 #include <ctype.h>
 #include <map>
@@ -69,6 +70,7 @@ long deauth_tmp = 0;
 HandshakeTracker hsTracker;
 std::map<uint64_t, ClientStats> targetClients;
 portMUX_TYPE clientsMux = portMUX_INITIALIZER_UNLOCKED;
+portMUX_TYPE beaconMux = portMUX_INITIALIZER_UNLOCKED;
 
 File _pcap_file;
 File _deauth_file;
@@ -78,6 +80,7 @@ bool sdDetected = false;
 FS *activeFs = &LittleFS;
 SemaphoreHandle_t fileMutex = nullptr;
 QueueHandle_t snifferQueue = nullptr;
+QueueHandle_t snifferFreeSlots = nullptr;
 TaskHandle_t snifferWriterHandle = nullptr;
 StaticSemaphore_t fileMutexBuffer;
 SemaphoreHandle_t handshakeMutex = nullptr;
@@ -88,9 +91,14 @@ String filename = "/BrucePCAP/" + (String)FILENAME + ".pcap";
 String deauthFilename = "/BrucePCAP/deauth_0.pcap";
 int deauthFileIndex = 0;
 int rawFileIndex = 0;
-std::map<uint64_t, String> beaconSsidCache;
 const size_t MAX_CAPTURE_SSID_LEN = 32;
-const size_t SNIFFER_QUEUE_DEPTH = 48;
+struct SsidCacheEntry {
+    char ssid[MAX_CAPTURE_SSID_LEN + 1] = {0};
+};
+std::map<uint64_t, SsidCacheEntry> beaconSsidCache;
+const size_t SNIFFER_PACKET_POOL_SIZE = 16;
+const size_t SNIFFER_QUEUE_DEPTH = SNIFFER_PACKET_POOL_SIZE;
+const uint16_t SNIFFER_PACKET_BUFFER_LEN = 2500;
 std::set<uint64_t> handshakeReadyBssids;
 portMUX_TYPE handshakeReadyMux = portMUX_INITIALIZER_UNLOCKED;
 std::set<uint64_t> handshakeBeaconLogged;
@@ -100,21 +108,19 @@ std::map<uint64_t, uint32_t> beaconLastSeen; // key = macToKey(mac) -> last seen
 const uint32_t BEACON_TIMEOUT_MS = 120000;   // 2 minutes
 unsigned long lastBeaconCleanup = 0;
 
-struct SnifferQueueItem {
-    wifi_promiscuous_pkt_t *packet = nullptr;
-    uint32_t ts_sec = 0;
-    uint32_t ts_usec = 0;
-    uint16_t raw_len = 0;
-    wifi_promiscuous_pkt_type_t type = WIFI_PKT_MISC;
-    bool isBeacon = false;
-    bool isHandshakeFrame = false;
-    bool isDeauthFrame = false;
-    bool saveRaw = false;
-    bool saveHandshake = false;
-    bool saveDeauth = false;
-    uint8_t bssid[6] = {0};
-    char ssid[MAX_CAPTURE_SSID_LEN + 1] = {0};
+struct CapturedPacketSlot {
+    wifi_pkt_rx_ctrl_t rx_ctrl{};
+    uint8_t payload[SNIFFER_PACKET_BUFFER_LEN] = {0};
 };
+
+struct SnifferQueueItem {
+    uint8_t slotIndex = 0xFF;
+    wifi_promiscuous_pkt_type_t type = WIFI_PKT_MISC;
+};
+
+static_assert(offsetof(CapturedPacketSlot, payload) == sizeof(wifi_pkt_rx_ctrl_t), "Unexpected packet slot layout");
+
+CapturedPacketSlot *snifferPacketPool = nullptr;
 
 struct FrameInfo {
     bool valid = false;
@@ -124,17 +130,18 @@ struct FrameInfo {
     int eapolMsgNum = -1;
     uint8_t apAddr[6] = {0};
     uint64_t apKey = 0;
-    String ssid;
+    char ssid[MAX_CAPTURE_SSID_LEN + 1] = {0};
 };
 
 static bool ensureSnifferBackend();
 static void snifferWriterTask(void *param);
-static wifi_promiscuous_pkt_t *duplicatePacket(const wifi_promiscuous_pkt_t *pkt, uint16_t length);
-static void releasePacketCopy(wifi_promiscuous_pkt_t *packet);
+static wifi_promiscuous_pkt_t *packetFromSlot(uint8_t slotIndex);
+static void recycleSnifferSlot(uint8_t slotIndex);
+static void processCapturedPacket(const SnifferQueueItem &item);
 static uint64_t macToKey(const void *mac); // changed to const void *
 static void copyMac(uint8_t *dest, const uint8_t *src);
-static String extractSsid(const wifi_promiscuous_pkt_t *packet);
-static void copySsidToBuffer(const String &ssid, char *buffer, size_t len);
+static size_t extractSsid(const wifi_promiscuous_pkt_t *packet, char *out, size_t outLen);
+static void copySsidToBuffer(const char *ssid, char *buffer, size_t len);
 static String macToHex(const uint8_t *mac);
 static String buildHandshakePath(const uint8_t *mac, const char *ssid);
 static bool handshakeFileExists(const String &path);
@@ -156,8 +163,8 @@ static bool rawCaptureEnabled();
 static bool handshakeCaptureEnabled();
 static bool deauthCaptureEnabled();
 static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt);
-static String resolveSsidForFrame(FrameInfo &info, const wifi_promiscuous_pkt_t *packet);
-static void registerBeacon(const uint8_t *apAddr);
+static void resolveSsidForFrame(FrameInfo &info, const wifi_promiscuous_pkt_t *packet);
+static void registerBeacon(const uint8_t *apAddr, uint8_t channel);
 
 // --- New helper prototypes ---
 static void cleanupStaleBeacons();
@@ -175,6 +182,19 @@ const int DEAUTH_MSG_Y = tftHeight - 27;
 const int DEAUTH_MSG_W = 75;
 const int DEAUTH_MSG_H = 8;
 const uint16_t DEAUTH_BG = TFT_BLACK; // background color used to clear the text
+
+// Target BSSID active flag (avoids prefix-based checks like 00:00:xx)
+static volatile bool targetBssidActive = false;
+static inline void refreshTargetBssidActive() {
+    bool active = false;
+    for (int i = 0; i < 6; ++i) {
+        if (targetBssid[i] != 0x00) {
+            active = true;
+            break;
+        }
+    }
+    targetBssidActive = active;
+}
 
 //===== FUNCTIONS =====//
 
@@ -411,7 +431,7 @@ String sanitizeSsid(const char *ssid) {
 
 static String macToHex(const uint8_t *mac) {
     char buffer[13] = {0};
-    sprintf(buffer, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    snprintf(buffer, sizeof(buffer), "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     return String(buffer);
 }
 
@@ -508,25 +528,44 @@ static void resetHandshakeBeaconCache() {
     }
 }
 
-static void registerBeacon(const uint8_t *apAddr) {
+static void registerBeacon(const uint8_t *apAddr, uint8_t channel) {
     if (!apAddr) return;
     BeaconList beacon;
     memcpy(beacon.MAC, apAddr, sizeof(beacon.MAC));
-    beacon.channel = ch;
+    beacon.channel = channel;
     registeredBeacons.insert(beacon);
 }
 
-static String resolveSsidForFrame(FrameInfo &info, const wifi_promiscuous_pkt_t *packet) {
-    if (!packet) return "";
+static void resolveSsidForFrame(FrameInfo &info, const wifi_promiscuous_pkt_t *packet) {
+    if (info.ssid[0] != '\0') { info.ssid[0] = '\0'; }
+    if (!packet) return;
     if (info.isBeacon) {
         beacon_frames++;
-        String ssid = extractSsid(packet);
-        beaconSsidCache[info.apKey] = ssid;
-        return ssid;
+        char ssidBuf[MAX_CAPTURE_SSID_LEN + 1] = {0};
+        extractSsid(packet, ssidBuf, sizeof(ssidBuf));
+        portENTER_CRITICAL(&beaconMux);
+        auto it = beaconSsidCache.find(info.apKey);
+        if (it == beaconSsidCache.end()) {
+            SsidCacheEntry entry;
+            copySsidToBuffer(ssidBuf, entry.ssid, sizeof(entry.ssid));
+            beaconSsidCache.emplace(info.apKey, entry);
+        } else {
+            copySsidToBuffer(ssidBuf, it->second.ssid, sizeof(it->second.ssid));
+        }
+        portEXIT_CRITICAL(&beaconMux);
+        copySsidToBuffer(ssidBuf, info.ssid, sizeof(info.ssid));
+        return;
     }
+    char ssidBuf[MAX_CAPTURE_SSID_LEN + 1] = {0};
+    bool found = false;
+    portENTER_CRITICAL(&beaconMux);
     auto it = beaconSsidCache.find(info.apKey);
-    if (it != beaconSsidCache.end()) { return it->second; }
-    return "";
+    if (it != beaconSsidCache.end()) {
+        copySsidToBuffer(it->second.ssid, ssidBuf, sizeof(ssidBuf));
+        found = true;
+    }
+    portEXIT_CRITICAL(&beaconMux);
+    if (found) { copySsidToBuffer(ssidBuf, info.ssid, sizeof(info.ssid)); }
 }
 
 static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
@@ -553,7 +592,7 @@ static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
     info.isEapol = isItEAPOL(pkt);
 
     // --- ПЕРЕХВАТ КЛИЕНТОВ ---
-    if (frameType == 0x02 && (targetBssid[0] != 0x00 || targetBssid[1] != 0x00)) {
+    if (frameType == 0x02 && targetBssidActive) {
         if (memcmp(addr1, targetBssid, 6) == 0 || memcmp(addr2, targetBssid, 6) == 0) {
             const uint8_t *cMac = nullptr;
             if (memcmp(addr1, targetBssid, 6) == 0 && (addr2[0] & 0x01) == 0) cMac = addr2;
@@ -563,9 +602,15 @@ static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
                 uint64_t cKey = macToKey(cMac);
                 int8_t rssi = pkt->rx_ctrl.rssi;
                 portENTER_CRITICAL(&clientsMux);
-                if (targetClients.size() < 3 || targetClients.count(cKey)) {
-                    targetClients[cKey].packets++;
-                    targetClients[cKey].rssi = rssi;
+                auto it = targetClients.find(cKey);
+                if (it != targetClients.end()) {
+                    it->second.packets++;
+                    it->second.rssi = rssi;
+                } else if (targetClients.size() < 3) {
+                    ClientStats stats;
+                    stats.packets = 1;
+                    stats.rssi = rssi;
+                    targetClients.insert({cKey, stats});
                 }
                 portEXIT_CRITICAL(&clientsMux);
             }
@@ -584,10 +629,14 @@ static FrameInfo analyzeFrame(wifi_promiscuous_pkt_t *pkt) {
         }
     }
 
-    info.ssid = resolveSsidForFrame(info, pkt);
+    resolveSsidForFrame(info, pkt);
     if (info.isBeacon) {
-        registerBeacon(info.apAddr);
-        beaconLastSeen[info.apKey] = (uint32_t)millis();
+        uint32_t now = (uint32_t)millis();
+        uint8_t packetChannel = pkt->rx_ctrl.channel ? pkt->rx_ctrl.channel : ch;
+        portENTER_CRITICAL(&beaconMux);
+        registerBeacon(info.apAddr, packetChannel);
+        beaconLastSeen[info.apKey] = now;
+        portEXIT_CRITICAL(&beaconMux);
     }
 
     return info;
@@ -602,52 +651,53 @@ static uint64_t macToKey(const void *mac) {
 
 static void copyMac(uint8_t *dest, const uint8_t *src) { memcpy(dest, src, 6); }
 
-static void copySsidToBuffer(const String &ssid, char *buffer, size_t len) {
+static void copySsidToBuffer(const char *ssid, char *buffer, size_t len) {
     if (!buffer || len == 0) return;
-    size_t copyLen = std::min<size_t>(ssid.length(), len - 1);
-    memcpy(buffer, ssid.c_str(), copyLen);
+    if (!ssid) {
+        buffer[0] = '\0';
+        return;
+    }
+    size_t copyLen = 0;
+    while (copyLen + 1 < len && ssid[copyLen] != '\0') { ++copyLen; }
+    memcpy(buffer, ssid, copyLen);
     buffer[copyLen] = '\0';
 }
 
-static String extractSsid(const wifi_promiscuous_pkt_t *packet) {
-    if (!packet) return "";
+static size_t extractSsid(const wifi_promiscuous_pkt_t *packet, char *out, size_t outLen) {
+    if (!out || outLen == 0) return 0;
+    out[0] = '\0';
+    if (!packet) return 0;
     const uint8_t *payload = packet->payload;
     int len = packet->rx_ctrl.sig_len;
-    if (len < 36) return "";
+    if (len < 36) return 0;
     int offset = 36;
     while (offset + 1 < len) {
         uint8_t tagNumber = payload[offset];
         uint8_t tagLength = payload[offset + 1];
         if (offset + 2 + tagLength > len) break;
         if (tagNumber == 0x00) {
-            String ssid = "";
-            for (int i = 0; i < tagLength; ++i) {
+            size_t maxCopy = std::min<size_t>(tagLength, outLen - 1);
+            size_t writeIdx = 0;
+            for (size_t i = 0; i < maxCopy; ++i) {
                 uint8_t chValue = payload[offset + 2 + i];
-                if (chValue != 0) { ssid += (char)chValue; }
+                if (chValue != 0) { out[writeIdx++] = (char)chValue; }
             }
-            return ssid;
+            out[writeIdx] = '\0';
+            return writeIdx;
         }
         offset += 2 + tagLength;
     }
-    return "";
+    return 0;
 }
 
-static wifi_promiscuous_pkt_t *duplicatePacket(const wifi_promiscuous_pkt_t *pkt, uint16_t length) {
-    size_t total = sizeof(wifi_pkt_rx_ctrl_t) + length;
-    uint8_t *buffer = (uint8_t *)heap_caps_malloc(total, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    if (!buffer) { buffer = (uint8_t *)heap_caps_malloc(total, MALLOC_CAP_8BIT); }
-    if (!buffer) { buffer = (uint8_t *)malloc(total); }
-    if (!buffer) { return nullptr; }
-    auto *copy = reinterpret_cast<wifi_promiscuous_pkt_t *>(buffer);
-    memcpy(copy, pkt, sizeof(wifi_pkt_rx_ctrl_t));
-    memcpy(buffer + sizeof(wifi_pkt_rx_ctrl_t), pkt->payload, length);
-    copy->rx_ctrl.sig_len = length;
-    return copy;
+static wifi_promiscuous_pkt_t *packetFromSlot(uint8_t slotIndex) {
+    if (!snifferPacketPool || slotIndex >= SNIFFER_PACKET_POOL_SIZE) { return nullptr; }
+    return reinterpret_cast<wifi_promiscuous_pkt_t *>(&snifferPacketPool[slotIndex]);
 }
 
-static void releasePacketCopy(wifi_promiscuous_pkt_t *packet) {
-    if (!packet) return;
-    heap_caps_free(packet);
+static void recycleSnifferSlot(uint8_t slotIndex) {
+    if (!snifferFreeSlots || slotIndex >= SNIFFER_PACKET_POOL_SIZE) { return; }
+    xQueueSend(snifferFreeSlots, &slotIndex, 0);
 }
 
 static bool lockFileMutex(TickType_t ticks) {
@@ -720,6 +770,28 @@ static String currentModeString() {
 static bool ensureSnifferBackend() {
     if (!fileMutex) { fileMutex = xSemaphoreCreateMutexStatic(&fileMutexBuffer); }
     if (!handshakeMutex) { handshakeMutex = xSemaphoreCreateMutexStatic(&handshakeMutexBuffer); }
+    if (!snifferPacketPool) {
+        const size_t packetPoolBytes = sizeof(CapturedPacketSlot) * SNIFFER_PACKET_POOL_SIZE;
+        snifferPacketPool = static_cast<CapturedPacketSlot *>(
+            heap_caps_malloc(packetPoolBytes, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM)
+        );
+        if (!snifferPacketPool) {
+            snifferPacketPool =
+                static_cast<CapturedPacketSlot *>(heap_caps_malloc(packetPoolBytes, MALLOC_CAP_8BIT));
+        }
+        if (!snifferPacketPool) {
+            snifferPacketPool = static_cast<CapturedPacketSlot *>(malloc(packetPoolBytes));
+        }
+        if (!snifferPacketPool) { return false; }
+        memset(snifferPacketPool, 0, packetPoolBytes);
+    }
+    if (!snifferFreeSlots) {
+        snifferFreeSlots = xQueueCreate(SNIFFER_PACKET_POOL_SIZE, sizeof(uint8_t));
+        if (!snifferFreeSlots) { return false; }
+        for (uint8_t slotIndex = 0; slotIndex < SNIFFER_PACKET_POOL_SIZE; ++slotIndex) {
+            xQueueSend(snifferFreeSlots, &slotIndex, 0);
+        }
+    }
     if (!snifferQueue) { snifferQueue = xQueueCreate(SNIFFER_QUEUE_DEPTH, sizeof(SnifferQueueItem)); }
     if (!snifferQueue) { return false; }
     if (!snifferWriterHandle) {
@@ -736,25 +808,74 @@ static bool ensureSnifferBackend() {
     return snifferWriterHandle != nullptr;
 }
 
-static void handleRawWrite(const SnifferQueueItem &item) {
-    if (!rawCaptureEnabled() || !item.packet) { return; }
+static void handleRawWrite(const wifi_promiscuous_pkt_t *packet, uint32_t ts_sec, uint32_t ts_usec, uint16_t rawLen) {
+    if (!rawCaptureEnabled() || !packet) { return; }
     if (lockFileMutex(pdMS_TO_TICKS(200))) {
-        newPacketSD(item.ts_sec, item.ts_usec, item.raw_len, item.packet->payload, _pcap_file);
+        newPacketSD(ts_sec, ts_usec, rawLen, const_cast<uint8_t *>(packet->payload), _pcap_file);
         unlockFileMutex();
     }
 }
 
-static void handleHandshakeWrite(const SnifferQueueItem &item) {
-    if (!handshakeCaptureEnabled() || !item.packet) { return; }
-    saveHandshake(item.packet, item.isBeacon, *activeFs, item.ssid);
+static void handleHandshakeWrite(
+    wifi_promiscuous_pkt_t *packet, bool isBeacon, const char *ssid, uint16_t handshakeLen
+) {
+    if (!handshakeCaptureEnabled() || !packet) { return; }
+    uint16_t originalLen = packet->rx_ctrl.sig_len;
+    packet->rx_ctrl.sig_len = handshakeLen;
+    saveHandshake(packet, isBeacon, *activeFs, ssid);
+    packet->rx_ctrl.sig_len = originalLen;
 }
 
-static void handleDeauthWrite(const SnifferQueueItem &item) {
-    if (!deauthCaptureEnabled() || !item.packet) { return; }
+static void handleDeauthWrite(
+    const wifi_promiscuous_pkt_t *packet, uint32_t ts_sec, uint32_t ts_usec, uint16_t rawLen
+) {
+    if (!deauthCaptureEnabled() || !packet) { return; }
     if (lockFileMutex(pdMS_TO_TICKS(200))) {
-        newPacketSD(item.ts_sec, item.ts_usec, item.raw_len, item.packet->payload, _deauth_file);
+        newPacketSD(ts_sec, ts_usec, rawLen, const_cast<uint8_t *>(packet->payload), _deauth_file);
         unlockFileMutex();
     }
+}
+
+static void processCapturedPacket(const SnifferQueueItem &item) {
+    wifi_promiscuous_pkt_t *packet = packetFromSlot(item.slotIndex);
+    if (!packet) { return; }
+
+    if (isLittleFS && !littleFsSpaceAvailable) {
+        littleFsWasFull = true;
+        returnToMenu = true;
+        esp_wifi_set_promiscuous(false);
+        return;
+    }
+
+    packet_counter++;
+    refreshTargetBssidActive();
+
+    FrameInfo frameInfo = analyzeFrame(packet);
+    if (!frameInfo.valid) { return; }
+    if (frameInfo.isEapol) { num_EAPOL++; }
+
+    const bool saveRaw = rawCaptureEnabled();
+    const bool saveHandshake =
+        handshakeCaptureEnabled() &&
+        (frameInfo.isEapol || (frameInfo.isBeacon && shouldSaveBeaconForHandshake(frameInfo.apAddr)));
+    const bool saveDeauth = deauthCaptureEnabled() && frameInfo.isDeauth;
+
+    if (!saveRaw && !saveHandshake && !saveDeauth) { return; }
+
+    const uint64_t packetTimestamp = packet->rx_ctrl.timestamp;
+    const uint32_t tsSec = packetTimestamp / 1000000ULL;
+    const uint32_t tsUsec = packetTimestamp % 1000000ULL;
+
+    uint16_t rawLen = packet->rx_ctrl.sig_len;
+    if (item.type == WIFI_PKT_MGMT && rawLen >= 4) { rawLen -= 4; }
+
+    const char *ssidLabel = frameInfo.ssid[0] == '\0' ? "UNKNOWN" : frameInfo.ssid;
+    const uint16_t handshakeLen =
+        (frameInfo.isBeacon && packet->rx_ctrl.sig_len >= 4) ? packet->rx_ctrl.sig_len - 4 : packet->rx_ctrl.sig_len;
+
+    if (saveRaw) { handleRawWrite(packet, tsSec, tsUsec, rawLen); }
+    if (saveHandshake) { handleHandshakeWrite(packet, frameInfo.isBeacon, ssidLabel, handshakeLen); }
+    if (saveDeauth) { handleDeauthWrite(packet, tsSec, tsUsec, rawLen); }
 }
 
 static void snifferWriterTask(void *param) {
@@ -762,10 +883,8 @@ static void snifferWriterTask(void *param) {
     SnifferQueueItem item;
     while (true) {
         if (xQueueReceive(snifferQueue, &item, portMAX_DELAY) == pdTRUE) {
-            if (item.saveRaw) { handleRawWrite(item); }
-            if (item.saveHandshake) { handleHandshakeWrite(item); }
-            if (item.saveDeauth) { handleDeauthWrite(item); }
-            releasePacketCopy(item.packet);
+            processCapturedPacket(item);
+            recycleSnifferSlot(item.slotIndex);
         }
     }
 }
@@ -808,7 +927,10 @@ void sniffer_wait_for_flush(uint32_t timeoutMs) {
     if (!snifferQueue) { return; }
     TickType_t start = xTaskGetTickCount();
     TickType_t deadline = pdMS_TO_TICKS(timeoutMs);
-    while (uxQueueMessagesWaiting(snifferQueue) > 0) {
+    while (
+        uxQueueMessagesWaiting(snifferQueue) > 0 ||
+        (snifferFreeSlots && uxQueueMessagesWaiting(snifferFreeSlots) < SNIFFER_PACKET_POOL_SIZE)
+    ) {
         vTaskDelay(pdMS_TO_TICKS(10));
         if (timeoutMs == 0) { continue; }
         if ((xTaskGetTickCount() - start) > deadline) { break; }
@@ -879,60 +1001,30 @@ bool writeHeader(File file) {
 /* will be executed on every packet the ESP32 gets while being in promiscuous mode */
 // Sniffer callback
 void sniffer(void *buf, wifi_promiscuous_pkt_type_t type) {
-    if (!snifferQueue && !ensureSnifferBackend()) { return; }
-    // If using LittleFS to save .pcaps and storage is exhausted, stop promiscuous mode
-    if (isLittleFS && !littleFsSpaceAvailable) {
-        littleFsWasFull = true; // storage triggered exit
-        returnToMenu = true;
-        esp_wifi_set_promiscuous(false);
-        return;
-    }
+    if (!buf || !snifferQueue || !snifferFreeSlots || !snifferPacketPool) { return; }
 
-    wifi_promiscuous_pkt_t *pkt = (wifi_promiscuous_pkt_t *)buf;
-    wifi_pkt_rx_ctrl_t ctrl = pkt->rx_ctrl;
-
-    packet_counter++;
-
-    FrameInfo frameInfo = analyzeFrame(pkt);
-    if (!frameInfo.valid) { return; }
-    if (frameInfo.isEapol) { num_EAPOL++; }
-
-    bool saveRaw = rawCaptureEnabled();
-    bool saveHandshake =
-        handshakeCaptureEnabled() &&
-        (frameInfo.isEapol || (frameInfo.isBeacon && shouldSaveBeaconForHandshake(frameInfo.apAddr)));
-    bool saveDeauth = deauthCaptureEnabled() && frameInfo.isDeauth;
-
-    if (!saveRaw && !saveHandshake && !saveDeauth) { return; }
-
-    wifi_promiscuous_pkt_t *copy = duplicatePacket(pkt, ctrl.sig_len);
-    if (!copy) { return; }
-    if (frameInfo.isBeacon && copy->rx_ctrl.sig_len >= 4) { copy->rx_ctrl.sig_len -= 4; }
-
-    SnifferQueueItem item;
-    item.packet = copy;
-    uint64_t pktTimestamp = copy->rx_ctrl.timestamp;
-    item.ts_sec = pktTimestamp / 1000000ULL;
-    item.ts_usec = pktTimestamp % 1000000ULL;
-    item.raw_len = ctrl.sig_len;
-    if (type == WIFI_PKT_MGMT && item.raw_len >= 4) { item.raw_len -= 4; }
-    item.type = type;
-    item.isBeacon = frameInfo.isBeacon;
-    item.isHandshakeFrame = frameInfo.isEapol;
-    item.isDeauthFrame = frameInfo.isDeauth;
-    item.saveRaw = saveRaw;
-    item.saveHandshake = saveHandshake;
-    item.saveDeauth = saveDeauth;
-    copyMac(item.bssid, frameInfo.apAddr);
-    String ssidLabel = frameInfo.ssid.length() == 0 ? "UNKNOWN" : frameInfo.ssid;
-    copySsidToBuffer(ssidLabel, item.ssid, sizeof(item.ssid));
+    wifi_promiscuous_pkt_t *pkt = static_cast<wifi_promiscuous_pkt_t *>(buf);
+    uint16_t copyLen = pkt->rx_ctrl.sig_len;
+    if (copyLen == 0) { return; }
+    if (copyLen > SNIFFER_PACKET_BUFFER_LEN) { copyLen = SNIFFER_PACKET_BUFFER_LEN; }
 
     BaseType_t taskWoken = pdFALSE;
+    uint8_t slotIndex = 0xFF;
+    if (xQueueReceiveFromISR(snifferFreeSlots, &slotIndex, &taskWoken) != pdTRUE) { return; }
+
+    CapturedPacketSlot &slot = snifferPacketPool[slotIndex];
+    memcpy(&slot.rx_ctrl, &pkt->rx_ctrl, sizeof(wifi_pkt_rx_ctrl_t));
+    slot.rx_ctrl.sig_len = copyLen;
+    memcpy(slot.payload, pkt->payload, copyLen);
+
+    SnifferQueueItem item;
+    item.slotIndex = slotIndex;
+    item.type = type;
+
     if (xQueueSendFromISR(snifferQueue, &item, &taskWoken) != pdTRUE) {
-        releasePacketCopy(copy);
-    } else if (taskWoken) {
-        portYIELD_FROM_ISR();
+        xQueueSendFromISR(snifferFreeSlots, &slotIndex, &taskWoken);
     }
+    if (taskWoken) { portYIELD_FROM_ISR(); }
 }
 
 // esp_err_t event_handler(void *ctx, system_event_t *event){ return ESP_OK; }
@@ -974,44 +1066,46 @@ void openFile(FS &Fs) {
 
 static void cleanupStaleBeacons() {
     unsigned long now = millis();
-    std::vector<BeaconList> toRemove;
-    for (auto it = registeredBeacons.begin(); it != registeredBeacons.end(); ++it) {
+    portENTER_CRITICAL(&beaconMux);
+    for (auto it = registeredBeacons.begin(); it != registeredBeacons.end();) {
         uint64_t key = macToKey(it->MAC);
         auto lastIt = beaconLastSeen.find(key);
-        if (lastIt == beaconLastSeen.end() || (now - (unsigned long)lastIt->second) > BEACON_TIMEOUT_MS) {
-            toRemove.push_back(*it);
+        bool stale = (lastIt == beaconLastSeen.end()) ||
+                     (now - (unsigned long)lastIt->second) > BEACON_TIMEOUT_MS;
+        if (stale) {
+            it = registeredBeacons.erase(it);
+            beaconSsidCache.erase(key);
+            if (lastIt != beaconLastSeen.end()) { beaconLastSeen.erase(lastIt); }
+        } else {
+            ++it;
         }
     }
-    for (const auto &b : toRemove) {
-        // erase by matching MAC bytes
-        for (auto it = registeredBeacons.begin(); it != registeredBeacons.end();) {
-            if (memcmp(it->MAC, b.MAC, 6) == 0) {
-                it = registeredBeacons.erase(it);
-            } else {
-                ++it;
-            }
-        }
-        uint64_t key = macToKey(b.MAC);
-        beaconSsidCache.erase(key);
-        beaconLastSeen.erase(key);
-    }
+    portEXIT_CRITICAL(&beaconMux);
 }
 
 static size_t countActiveBeaconsOnChannel(uint8_t channel) {
     unsigned long now = millis();
     size_t cnt = 0;
+    portENTER_CRITICAL(&beaconMux);
     for (const auto &b : registeredBeacons) {
         if (b.channel != channel) continue;
         uint64_t key = macToKey(b.MAC);
         auto it = beaconLastSeen.find(key);
         if (it != beaconLastSeen.end() && (now - (unsigned long)it->second) <= BEACON_TIMEOUT_MS) { ++cnt; }
     }
+    portEXIT_CRITICAL(&beaconMux);
     return cnt;
 }
 
 static std::vector<String> recentSsidsOnChannel(uint8_t channel, size_t maxItems) {
     std::vector<String> out;
+    if (maxItems == 0) return out;
     unsigned long now = millis();
+    const size_t maxItemsLocal = (maxItems > 8) ? 8 : maxItems;
+    char ssidBufs[8][MAX_CAPTURE_SSID_LEN + 1] = {};
+    size_t count = 0;
+
+    portENTER_CRITICAL(&beaconMux);
     for (const auto &b : registeredBeacons) {
         if (b.channel != channel) continue;
         uint64_t key = macToKey(b.MAC);
@@ -1020,19 +1114,26 @@ static std::vector<String> recentSsidsOnChannel(uint8_t channel, size_t maxItems
             continue;
         auto ssidIt = beaconSsidCache.find(key);
         if (ssidIt == beaconSsidCache.end()) continue;
-        String ss = ssidIt->second;
-        if (ss.length() == 0) continue;
+        const char *ssid = ssidIt->second.ssid;
+        if (!ssid || ssid[0] == '\0') continue;
+
         bool dup = false;
-        for (auto &x : out)
-            if (x == ss) {
+        for (size_t i = 0; i < count; ++i) {
+            if (strncmp(ssidBufs[i], ssid, MAX_CAPTURE_SSID_LEN) == 0) {
                 dup = true;
                 break;
             }
-        if (!dup) {
-            out.push_back(ss);
-            if (out.size() >= maxItems) break;
         }
+        if (dup) continue;
+
+        copySsidToBuffer(ssid, ssidBufs[count], sizeof(ssidBufs[count]));
+        count++;
+        if (count >= maxItemsLocal) break;
     }
+    portEXIT_CRITICAL(&beaconMux);
+
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i) { out.push_back(String(ssidBufs[i])); }
     return out;
 }
 
@@ -1073,9 +1174,11 @@ void sniffer_setup() {
     tft.setCursor(80, 100);
 
     sniffer_reset_handshake_cache(); // Need to clear to restart HS count
+    portENTER_CRITICAL(&beaconMux);
     registeredBeacons.clear();
     beaconSsidCache.clear();
     beaconLastSeen.clear(); // ensure starts empty
+    portEXIT_CRITICAL(&beaconMux);
 
     /* setup wifi */
     ensureWifiPlatform();
@@ -1085,6 +1188,7 @@ void sniffer_setup() {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
 
     wifi_config_t wifi_config;
+    memset(&wifi_config, 0, sizeof(wifi_config));
     strcpy((char *)wifi_config.ap.ssid, "BruceSniffer");
     strcpy((char *)wifi_config.ap.password, "brucenet");
     wifi_config.ap.ssid_len = strlen("BruceSniffer");
@@ -1238,8 +1342,11 @@ void sniffer_setup() {
                      num_HS = 0;
                      start_time = millis();
                      beacon_frames = 0;
+                     portENTER_CRITICAL(&beaconMux);
                      registeredBeacons.clear();
                      beaconSsidCache.clear();
+                     beaconLastSeen.clear();
+                     portEXIT_CRITICAL(&beaconMux);
                      sniffer_reset_handshake_cache();
                      deauth_tmp = millis();
                  }                                                                                        },
@@ -1290,8 +1397,12 @@ void sniffer_setup() {
 
             // New: show beacon counts and recent SSIDs
             size_t activeOnChannel = countActiveBeaconsOnChannel(all_wifi_channels[ch]);
+            size_t cachedBeacons = 0;
+            portENTER_CRITICAL(&beaconMux);
+            cachedBeacons = registeredBeacons.size();
+            portEXIT_CRITICAL(&beaconMux);
             padprintln(
-                "Beacons " + String(beacon_frames) + " tot. /" + String(registeredBeacons.size()) +
+                "Beacons " + String(beacon_frames) + " tot. /" + String(cachedBeacons) +
                 " cached / ch " + String(activeOnChannel) + " active"
             );
 
@@ -1339,10 +1450,21 @@ void sniffer_setup() {
 
         if (deauth && (millis() - deauth_tmp) > DEAUTH_INTERVAL) {
             bool deauth_sent = false;
+            BeaconList beaconsSnapshot[40];
+            size_t beaconCount = 0;
+            portENTER_CRITICAL(&beaconMux);
             if (registeredBeacons.size() > 40)
                 registeredBeacons.clear(); // Clear registered beacons to restart search and avoid restarts
+            for (const auto &b : registeredBeacons) {
+                if (beaconCount < (sizeof(beaconsSnapshot) / sizeof(beaconsSnapshot[0]))) {
+                    beaconsSnapshot[beaconCount++] = b;
+                }
+            }
+            portEXIT_CRITICAL(&beaconMux);
+
             Serial.println("<<---- Starting Deauthentication Process ---->>");
-            for (auto registeredBeacon : registeredBeacons) {
+            for (size_t i = 0; i < beaconCount; ++i) {
+                const auto &registeredBeacon = beaconsSnapshot[i];
                 if (registeredBeacon.channel == ch) {
                     memcpy(&ap_record.bssid, registeredBeacon.MAC, 6);
                     wsl_bypasser_send_raw_frame(

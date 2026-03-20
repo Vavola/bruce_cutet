@@ -27,7 +27,7 @@ char *_readFileFromSerial(size_t fileSizeChar) {
     char *buf = psramFound() ? (char *)ps_malloc(fileSizeChar + 1) : (char *)malloc(fileSizeChar + 1);
 
     if (buf == NULL) {
-        serialDevice->printf("Could not allocate %d\n", fileSizeChar);
+        serialDevice->printf("Could not allocate %u\n", static_cast<unsigned int>(fileSizeChar));
         return NULL;
     }
 

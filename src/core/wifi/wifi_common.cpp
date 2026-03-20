@@ -148,6 +148,7 @@ bool wifiConnectMenu(wifi_mode_t mode) {
                 displayTextLine("Scanning..");
                 nets = WiFi.scanNetworks();
                 options = {};
+                options.reserve(nets + 2);
                 for (int i = 0; i < nets; i++) {
                     if (options.size() < 250) {
                         String ssid = WiFi.SSID(i);
@@ -155,8 +156,8 @@ bool wifiConnectMenu(wifi_mode_t mode) {
                         int32_t rssi = WiFi.RSSI(i);
                         int32_t ch = WiFi.channel(i);
                         // Check if the network is secured
-                        String encryptionPrefix = (encryptionType == WIFI_AUTH_OPEN) ? "" : "#";
-                        String encryptionTypeStr;
+                        const char *encryptionPrefix = (encryptionType == WIFI_AUTH_OPEN) ? "" : "#";
+                        const char *encryptionTypeStr = "Unknown";
                         switch (encryptionType) {
                             case WIFI_AUTH_OPEN: encryptionTypeStr = "Open"; break;
                             case WIFI_AUTH_WEP: encryptionTypeStr = "WEP"; break;
@@ -167,10 +168,19 @@ bool wifiConnectMenu(wifi_mode_t mode) {
                             default: encryptionTypeStr = "Unknown"; break;
                         }
 
-                        String optionText = encryptionPrefix + ssid + "(" + String(rssi) + "|" +
-                                            encryptionTypeStr + "|ch." + String(ch) + ")";
+                        char optionText[128];
+                        snprintf(
+                            optionText,
+                            sizeof(optionText),
+                            "%s%s(%d|%s|ch.%d)",
+                            encryptionPrefix,
+                            ssid.c_str(),
+                            (int)rssi,
+                            encryptionTypeStr,
+                            (int)ch
+                        );
 
-                        options.push_back({optionText.c_str(), [=]() {
+                        options.push_back({optionText, [=]() {
                                                _wifiConnect(ssid, encryptionType);
                                            }});
                     }
@@ -209,7 +219,10 @@ bool wifiConnectMenu(wifi_mode_t mode) {
 }
 
 void wifiConnectTask(void *pvParameters) {
-    if (WiFi.status() == WL_CONNECTED) return;
+    if (WiFi.status() == WL_CONNECTED) {
+        vTaskDelete(NULL);
+        return;
+    }
 
     WiFi.mode(WIFI_MODE_STA);
     int nets = WiFi.scanNetworks();

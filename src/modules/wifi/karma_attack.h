@@ -26,8 +26,6 @@ void karma_setup();
 
 // Packet processing functions
 bool isProbeRequestWithSSID(const wifi_promiscuous_pkt_t *packet);
-String extractSSID(const wifi_promiscuous_pkt_t *packet);
-String extractMAC(const wifi_promiscuous_pkt_t *packet);
 
 // Data management functions
 void saveProbeRequest(const ProbeRequest &probe, fs::FS &fs);

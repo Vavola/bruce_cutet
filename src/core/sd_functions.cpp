@@ -193,6 +193,7 @@ bool copyToFs(FS from, FS to, String path, bool draw) {
     File dest = to.open(path, FILE_WRITE);
     if (!dest) {
         Serial.println("Fail creating destination file");
+        source.close();
         return false;
     }
     size_t bytesRead;
@@ -201,6 +202,8 @@ bool copyToFs(FS from, FS to, String path, bool draw) {
 
     if (&to == &LittleFS && (LittleFS.totalBytes() - LittleFS.usedBytes()) < tot) {
         displayError("Not enought space", true);
+        source.close();
+        dest.close();
         return false;
     }
     const int bufSize = 1024;
@@ -233,9 +236,13 @@ bool copyToFs(FS from, FS to, String path, bool draw) {
     if (prog == tot) result = true;
     else {
         displayError("Fail Copying File", true);
+        source.close();
+        dest.close();
         return false;
     }
 
+    source.close();
+    dest.close();
     return result;
 }
 
@@ -359,6 +366,7 @@ String readSmallFile(FS &fs, String filepath) {
     size_t fileSize = file.size();
     if (fileSize > SAFE_STACK_BUFFER_SIZE || fileSize > ESP.getFreeHeap()) {
         displayError("File is too big", true);
+        file.close();
         return "";
     }
     // TODO: if(psramFound()) -> use PSRAM instead
@@ -387,6 +395,7 @@ char *readBigFile(FS *fs, String filepath, bool binary, size_t *fileSize) {
 
     if (!buf) {
         Serial.printf("Could not allocate memory for file: %s\n", filepath.c_str());
+        file.close();
         return NULL;
     }
 

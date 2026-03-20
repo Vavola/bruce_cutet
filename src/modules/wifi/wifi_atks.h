@@ -2,6 +2,7 @@
 #define __WIFI_ATKS_H__
 
 #include <WiFi.h>
+#include <esp_attr.h>
 
 extern wifi_ap_record_t ap_record;
 

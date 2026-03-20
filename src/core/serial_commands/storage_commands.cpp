@@ -136,8 +136,9 @@ uint32_t writeCallback(cmd *c) {
     Argument arg = cmd.getArgument("filepath");
     Argument sizeArg = cmd.getArgument("size");
     String filepath = arg.getValue();
-    String sizeStr = arg.getValue();
+    String sizeStr = sizeArg.getValue();
     filepath.trim();
+    sizeStr.trim();
     int fileSize = sizeStr.toInt();
 
     if (filepath.length() == 0) return false;
@@ -150,15 +151,25 @@ uint32_t writeCallback(cmd *c) {
     if (!getFsStorage(fs)) return false;
 
     char *txt = _readFileFromSerial(fileSize + 2);
-    if (strlen(txt) == 0) return false;
+    if (!txt) return false;
+
+    const size_t txtLen = strlen(txt);
+    if (txtLen == 0) {
+        free(txt);
+        return false;
+    }
 
     File f = fs->open(filepath, FILE_WRITE, true);
-    if (!f) return false;
+    if (!f) {
+        free(txt);
+        return false;
+    }
 
-    f.write((const uint8_t *)txt, strlen(txt));
+    const bool writeOk = f.write((const uint8_t *)txt, txtLen) == txtLen;
     f.close();
     free(txt);
 
+    if (!writeOk) return false;
     serialDevice->println("File written: " + filepath);
     return true;
 }

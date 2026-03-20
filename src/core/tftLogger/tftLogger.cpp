@@ -1,7 +1,50 @@
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <esp32-hal-psram.h>
 #include <globals.h>
 #include <tftLogger.h>
+
+namespace {
+constexpr char LOGGER_DIGITS[] = "0123456789ABCDEF";
+
+size_t formatUnsignedValue(unsigned long long value, uint8_t base, char *buffer, size_t bufferSize) {
+    if (!buffer || bufferSize == 0) return 0;
+
+    if (base < 2 || base > 16) base = 10;
+
+    char reversed[65];
+    size_t reversedLen = 0;
+    do {
+        reversed[reversedLen++] = LOGGER_DIGITS[value % base];
+        value /= base;
+    } while (value != 0 && reversedLen < sizeof(reversed));
+
+    size_t outLen = 0;
+    while (reversedLen > 0 && outLen + 1 < bufferSize) {
+        buffer[outLen++] = reversed[--reversedLen];
+    }
+    buffer[outLen] = '\0';
+    return outLen;
+}
+
+size_t formatSignedValue(long long value, uint8_t base, char *buffer, size_t bufferSize) {
+    if (!buffer || bufferSize == 0) return 0;
+
+    if (base == 10 && value < 0) {
+        if (bufferSize < 2) {
+            buffer[0] = '\0';
+            return 0;
+        }
+
+        buffer[0] = '-';
+        const unsigned long long magnitude = static_cast<unsigned long long>(-(value + 1)) + 1ULL;
+        return 1 + formatUnsignedValue(magnitude, base, buffer + 1, bufferSize - 1);
+    }
+
+    return formatUnsignedValue(static_cast<unsigned long long>(value), base, buffer, bufferSize);
+}
+} // namespace
 
 /*
 AUXILIARY FUNCTIONS TO CREATE THE JSONS
@@ -442,10 +485,16 @@ void tft_logger::drawFastHLine(int32_t x, int32_t y, int32_t w, int32_t fg) {
     restoreLogger();
 }
 
-void tft_logger::log_drawString(String s, tftFuncs fn, int32_t x, int32_t y) {
+void tft_logger::log_drawString(const String &s, tftFuncs fn, int32_t x, int32_t y) {
+    log_drawString(s.c_str(), s.length(), fn, x, y);
+}
+
+void tft_logger::log_drawString(const char *s, size_t len, tftFuncs fn, int32_t x, int32_t y) {
     if (!logging) return;
     if (!log) return;
-    if (removeLogEntriesInsideRect(x, y, s.length() * LW * currentTextSize(), s.length() * LH * currentTextSize())) {
+    if (!s) return;
+
+    if (removeLogEntriesInsideRect(x, y, len * LW * currentTextSize(), len * LH * currentTextSize())) {
         // debug purpose
         // Serial.printf("Something was removed while processing: %s\n", s.c_str());
     }
@@ -461,10 +510,10 @@ void tft_logger::log_drawString(String s, tftFuncs fn, int32_t x, int32_t y) {
     writeUint16(buffer, pos, currentTextBgColor());
 
     size_t maxLen = MAX_LOG_SIZE - pos - 1;
-    size_t len = s.length();
-    if (len > maxLen) len = maxLen;
-    memcpy(buffer + pos, s.c_str(), len);
-    pos += len;
+    size_t copyLen = len;
+    if (copyLen > maxLen) copyLen = maxLen;
+    memcpy(buffer + pos, s, copyLen);
+    pos += copyLen;
 
     buffer[1] = pos;
 
@@ -501,13 +550,17 @@ int16_t tft_logger::drawRightString(const String &string, int32_t x, int32_t y, 
     return r;
 }
 
-void tft_logger::log_print(String s) {
+void tft_logger::log_print(const String &s) {
+    log_print(s.c_str(), s.length());
+}
+
+void tft_logger::log_print(const char *s, size_t len) {
     if (!logging) return;
     if (!log) return;
+    if (!s) return;
 
     removeLogEntriesInsideRect(
-        getCursorX() - 1, getCursorY() - 1, s.length() * LW * currentTextSize() + 2,
-        s.length() * LH * currentTextSize() + 2
+        getCursorX() - 1, getCursorY() - 1, len * LW * currentTextSize() + 2, len * LH * currentTextSize() + 2
     );
 
     uint8_t buffer[MAX_LOG_SIZE];
@@ -521,10 +574,10 @@ void tft_logger::log_print(String s) {
     writeUint16(buffer, pos, currentTextBgColor());
 
     size_t maxLen = MAX_LOG_SIZE - pos - 1;
-    size_t len = s.length();
-    if (len > maxLen) len = maxLen;
-    memcpy(buffer + pos, s.c_str(), len);
-    pos += len;
+    size_t copyLen = len;
+    if (copyLen > maxLen) copyLen = maxLen;
+    memcpy(buffer + pos, s, copyLen);
+    pos += copyLen;
 
     buffer[1] = pos;
 
@@ -533,73 +586,178 @@ void tft_logger::log_print(String s) {
     pushLogIfUnique(l);
 }
 
-size_t tft_logger::print(const String &s) {
+size_t tft_logger::printBuffer(const char *s, size_t len) {
+    if (!s || len == 0) return 0;
+
     size_t totalPrinted = 0;
-    int remaining = s.length();
-    int offset = 0;
+    size_t offset = 0;
+    constexpr size_t maxChunkSize = MAX_LOG_SIZE - 13; // 13 bytes reserved to header + metadata
 
-    const int maxChunkSize = MAX_LOG_SIZE - 13; // 13 bytes reserved to header + metadata
+    while (offset < len) {
+        size_t chunkSize = len - offset;
+        if (chunkSize > maxChunkSize) chunkSize = maxChunkSize;
 
-    while (remaining > 0) {
-        int chunkSize = (remaining > maxChunkSize) ? maxChunkSize : remaining;
-        String chunk = s.substring(offset, offset + chunkSize);
-
-        log_print(chunk);
-        if (isSleeping) totalPrinted += chunk.length();
-        else totalPrinted += BRUCE_TFT_DRIVER::print(chunk);
+        const char *chunk = s + offset;
+        log_print(chunk, chunkSize);
+        if (isSleeping) totalPrinted += chunkSize;
+        else {
+            for (size_t i = 0; i < chunkSize; ++i) {
+                totalPrinted += BRUCE_TFT_DRIVER::write(static_cast<uint8_t>(chunk[i]));
+            }
+        }
 
         offset += chunkSize;
-        remaining -= chunkSize;
     }
 
     return totalPrinted;
 }
 
-size_t tft_logger::println(void) { return print("\n"); }
+size_t tft_logger::printlnBuffer(const char *s, size_t len) {
+    size_t totalPrinted = printBuffer(s, len);
+    static constexpr char newline[] = "\n";
+    totalPrinted += printBuffer(newline, sizeof(newline) - 1);
+    return totalPrinted;
+}
 
-size_t tft_logger::println(const String &s) { return print(s + "\n"); }
+size_t tft_logger::print(const String &s) {
+    return printBuffer(s.c_str(), s.length());
+}
 
-size_t tft_logger::println(char c) { return print(String(c) + "\n"); }
+size_t tft_logger::print(const char *s) {
+    if (!s) return 0;
+    return printBuffer(s, strlen(s));
+}
 
-size_t tft_logger::println(unsigned char b, int base) { return print(String(b, base) + "\n"); }
+size_t tft_logger::println(const String &s) { return printlnBuffer(s.c_str(), s.length()); }
 
-size_t tft_logger::println(int n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(const char *s) {
+    if (!s) return printlnBuffer("", 0);
+    return printlnBuffer(s, strlen(s));
+}
 
-size_t tft_logger::println(unsigned int n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(void) { return printlnBuffer("", 0); }
 
-size_t tft_logger::println(long n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(char c) {
+    char buffer[2] = {c, '\0'};
+    return printlnBuffer(buffer, 1);
+}
 
-size_t tft_logger::println(unsigned long n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(unsigned char b, int base) {
+    char buffer[9];
+    size_t len = formatUnsignedValue(b, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::println(long long n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(int n, int base) {
+    char buffer[34];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::println(unsigned long long n, int base) { return print(String(n, base) + "\n"); }
+size_t tft_logger::println(unsigned int n, int base) {
+    char buffer[34];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::println(double n, int digits) { return print(String(n, digits) + "\n"); }
+size_t tft_logger::println(long n, int base) {
+    char buffer[34];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::print(char c) { return print(String(c)); }
+size_t tft_logger::println(unsigned long n, int base) {
+    char buffer[34];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::print(unsigned char b, int base) { return print(String(b, base)); }
+size_t tft_logger::println(long long n, int base) {
+    char buffer[66];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::print(int n, int base) { return print(String(n, base)); }
+size_t tft_logger::println(unsigned long long n, int base) {
+    char buffer[66];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printlnBuffer(buffer, len);
+}
 
-size_t tft_logger::print(unsigned int n, int base) { return print(String(n, base)); }
+size_t tft_logger::println(double n, int digits) {
+    char buffer[64];
+    if (digits < 0) digits = 0;
+    if (digits > 9) digits = 9;
+    int len = snprintf(buffer, sizeof(buffer), "%.*f", digits, n);
+    if (len < 0) return 0;
+    if (static_cast<size_t>(len) >= sizeof(buffer)) len = sizeof(buffer) - 1;
+    return printlnBuffer(buffer, static_cast<size_t>(len));
+}
 
-size_t tft_logger::print(long n, int base) { return print(String(n, base)); }
+size_t tft_logger::print(char c) {
+    char buffer[2] = {c, '\0'};
+    return printBuffer(buffer, 1);
+}
 
-size_t tft_logger::print(unsigned long n, int base) { return print(String(n, base)); }
+size_t tft_logger::print(unsigned char b, int base) {
+    char buffer[9];
+    size_t len = formatUnsignedValue(b, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
 
-size_t tft_logger::print(long long n, int base) { return print(String(n, base)); }
+size_t tft_logger::print(int n, int base) {
+    char buffer[34];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
 
-size_t tft_logger::print(unsigned long long n, int base) { return print(String(n, base)); }
+size_t tft_logger::print(unsigned int n, int base) {
+    char buffer[34];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
 
-size_t tft_logger::print(double n, int digits) { return print(String(n, digits)); }
+size_t tft_logger::print(long n, int base) {
+    char buffer[34];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
+
+size_t tft_logger::print(unsigned long n, int base) {
+    char buffer[34];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
+
+size_t tft_logger::print(long long n, int base) {
+    char buffer[66];
+    size_t len = formatSignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
+
+size_t tft_logger::print(unsigned long long n, int base) {
+    char buffer[66];
+    size_t len = formatUnsignedValue(n, static_cast<uint8_t>(base), buffer, sizeof(buffer));
+    return printBuffer(buffer, len);
+}
+
+size_t tft_logger::print(double n, int digits) {
+    char buffer[64];
+    if (digits < 0) digits = 0;
+    if (digits > 9) digits = 9;
+    int len = snprintf(buffer, sizeof(buffer), "%.*f", digits, n);
+    if (len < 0) return 0;
+    if (static_cast<size_t>(len) >= sizeof(buffer)) len = sizeof(buffer) - 1;
+    return printBuffer(buffer, static_cast<size_t>(len));
+}
 
 size_t tft_logger::printf(const char *format, ...) {
     va_list args;
     va_start(args, format);
     char buf[256];
-    vsnprintf(buf, sizeof(buf), format, args);
+    int len = vsnprintf(buf, sizeof(buf), format, args);
     va_end(args);
-    return print(String(buf));
+    if (len < 0) return 0;
+    if (static_cast<size_t>(len) >= sizeof(buf)) len = sizeof(buf) - 1;
+    return printBuffer(buf, static_cast<size_t>(len));
 }

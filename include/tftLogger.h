@@ -85,6 +85,10 @@ private:
         return textbgcolor;
 #endif
     }
+    void log_drawString(const char *s, size_t len, tftFuncs fn, int32_t x, int32_t y);
+    void log_print(const char *s, size_t len);
+    size_t printBuffer(const char *s, size_t len);
+    size_t printlnBuffer(const char *s, size_t len);
 
 public:
     tft_logger(int16_t w = TFT_WIDTH, int16_t h = TFT_HEIGHT);
@@ -126,15 +130,17 @@ public:
     void drawWideLine(float ax, float ay, float bx, float by, float wd, int32_t fg, int32_t bg = 0x00FFFFFF);
     void drawFastVLine(int32_t x, int32_t y, int32_t h, int32_t fg);
     void drawFastHLine(int32_t x, int32_t y, int32_t w, int32_t fg);
-    void log_drawString(String s, tftFuncs fn, int32_t x, int32_t y);
+    void log_drawString(const String &s, tftFuncs fn, int32_t x, int32_t y);
     int16_t drawString(const String &string, int32_t x, int32_t y, uint8_t font = 1);
     int16_t drawCentreString(const String &string, int32_t x, int32_t y, uint8_t font = 1);
     int16_t drawRightString(const String &string, int32_t x, int32_t y, uint8_t font = 1);
 
-    void log_print(String s);
+    void log_print(const String &s);
 
     size_t print(const String &s);
+    size_t print(const char *s);
     size_t println(const String &s);
+    size_t println(const char *s);
     size_t println(void);
 
     size_t println(char c);

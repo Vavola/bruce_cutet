@@ -2,9 +2,7 @@
 #define __WIFI_MAC_H__
 // @IncursioHack
 
-#include "core/settings.h"
 #include <Arduino.h>
-#include <WiFi.h>
 
 void applyConfiguredMAC();
 

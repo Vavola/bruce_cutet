@@ -9,6 +9,7 @@ MainMenu::MainMenu() {
         &wifiMenu,
         &fileMenu,
         &configMenu,
+        &nrf24Menu,
 
     };
     _totalItems = _menuItems.size();

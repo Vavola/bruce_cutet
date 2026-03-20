@@ -1,6 +1,30 @@
 #include "settings_commands.h"
 #include <globals.h>
 
+namespace {
+void redactSensitiveSettings(JsonObject setting) {
+    if (!setting["webUI"].isNull()) {
+        JsonObject webUI = setting["webUI"].as<JsonObject>();
+        webUI["pwd"] = "<redacted>";
+    }
+
+    if (!setting["wifiAp"].isNull()) {
+        JsonObject wifiAp = setting["wifiAp"].as<JsonObject>();
+        wifiAp["pwd"] = "<redacted>";
+    }
+
+    if (!setting["wifi"].isNull()) {
+        JsonObject wifi = setting["wifi"].as<JsonObject>();
+        for (JsonPair kv : wifi) {
+            kv.value().set("<redacted>");
+        }
+    }
+
+    if (!setting["webUISessions"].isNull()) setting["webUISessions"] = "<redacted>";
+    if (!setting["wigleBasicToken"].isNull()) setting["wigleBasicToken"] = "<redacted>";
+}
+} // namespace
+
 uint32_t settingsCallback(cmd *c) {
     Command cmd(c);
 
@@ -15,9 +39,11 @@ uint32_t settingsCallback(cmd *c) {
     JsonObject setting = jsonDoc.as<JsonObject>();
 
     if (setting_name.length() == 0 && setting_value.length() == 0) {
-        // no args, just prints current config
-        serializeJsonPretty(jsonDoc, Serial);
-        serialDevice->println("");
+        // no args, print a redacted snapshot instead of leaking secrets over UART
+        redactSensitiveSettings(setting);
+        String output;
+        serializeJsonPretty(jsonDoc, output);
+        serialDevice->println(output);
         return true;
     }
 

@@ -107,6 +107,7 @@ void BruceConfig::fromFile(bool checkFS) {
     JsonDocument jsonDoc;
     if (deserializeJson(jsonDoc, file)) {
         Serial.println("Failed to read config file, using default configuration");
+        file.close();
         return;
     }
     file.close();
@@ -421,7 +422,6 @@ void BruceConfig::saveFile() {
     };
 
     // Serialize JSON to file
-    serializeJsonPretty(jsonDoc, Serial);
     if (serializeJsonPretty(jsonDoc, file) < 5) log_e("Failed to write config file");
     else log_i("config file written successfully");
 
@@ -558,7 +558,7 @@ void BruceConfig::setLedColor(uint32_t value) {
 }
 
 void BruceConfig::validateLedColorValue() {
-    ledColor = max<uint32_t>(0, min<uint32_t>(0xFFFFFFFF, ledColor));
+    ledColor &= 0x00FFFFFFUL;
 }
 
 void BruceConfig::setLedBlinkEnabled(int value) {
@@ -647,6 +647,9 @@ void BruceConfig::setEvilEndpointCreds(String value) {
 }
 
 void BruceConfig::validateEvilEndpointCreds() {
+    if (evilPortalEndpoints.getCredsEndpoint.isEmpty()) {
+        evilPortalEndpoints.getCredsEndpoint = "/creds";
+    }
     if (evilPortalEndpoints.getCredsEndpoint == evilPortalEndpoints.setSsidEndpoint) {
         // on collision reset to defaults
         evilPortalEndpoints.getCredsEndpoint = "/creds";
@@ -658,11 +661,14 @@ void BruceConfig::validateEvilEndpointCreds() {
 
 void BruceConfig::setEvilEndpointSsid(String value) {
     evilPortalEndpoints.setSsidEndpoint = value;
-    validateEvilEndpointCreds();
+    validateEvilEndpointSsid();
     saveFile();
 }
 
 void BruceConfig::validateEvilEndpointSsid() {
+    if (evilPortalEndpoints.setSsidEndpoint.isEmpty()) {
+        evilPortalEndpoints.setSsidEndpoint = "/ssid";
+    }
     if (evilPortalEndpoints.getCredsEndpoint == evilPortalEndpoints.setSsidEndpoint) {
         // on collision reset to defaults
         evilPortalEndpoints.setSsidEndpoint = "/ssid";
@@ -689,11 +695,12 @@ void BruceConfig::setEvilAllowSetSsid(bool value) {
 
 void BruceConfig::setEvilPasswordMode(EvilPortalPasswordMode value) {
     evilPortalPasswordMode = value;
+    validateEvilPasswordMode();
     saveFile();
 }
 
 void BruceConfig::validateEvilPasswordMode() {
-    if (evilPortalPasswordMode < 0 || evilPortalPasswordMode > 2) evilPortalPasswordMode = FULL_PASSWORD;
+    if (evilPortalPasswordMode > SAVE_LENGTH) evilPortalPasswordMode = FULL_PASSWORD;
 }
 
 void BruceConfig::setStartupApp(String value) {
@@ -748,7 +755,6 @@ void BruceConfig::setBadUSBBLEKeyDelay(uint16_t value) {
 }
 
 void BruceConfig::validateBadUSBBLEKeyDelay() {
-    if (badUSBBLEKeyDelay < 0) badUSBBLEKeyDelay = 0;
     if (badUSBBLEKeyDelay > 500) badUSBBLEKeyDelay = 500;
 }
 

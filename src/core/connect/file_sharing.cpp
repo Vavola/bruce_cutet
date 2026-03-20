@@ -83,9 +83,8 @@ void FileSharing::receiveFile() {
             break;
         }
 
-        if (!recvQueue.empty()) {
-            Message recvFileMessage = recvQueue.front();
-            recvQueue.erase(recvQueue.begin());
+        Message recvFileMessage;
+        if (recvQueue && xQueueReceive(recvQueue, &recvFileMessage, 0) == pdTRUE) {
 
             progressHandler(recvFileMessage.bytesSent, recvFileMessage.totalBytes, "Receiving...");
 

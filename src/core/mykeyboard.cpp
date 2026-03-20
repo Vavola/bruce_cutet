@@ -442,8 +442,10 @@ String generalKeyboard(
 
     tft.fillScreen(bruceConfig.bgColor); // reset the screen
 
+#if defined(HAS_3_BUTTONS)
     uint8_t longNextPress = 0;
     uint8_t longPrevPress = 0;
+#endif
     unsigned long LongPressTmp = millis();
 
     // main loop
@@ -654,7 +656,9 @@ String generalKeyboard(
             /* Next-Prev Btns to move in X axis (right-left) */
             else if (check(NextPress)) {
                 NextPress = false;
+#if defined(HAS_3_BUTTONS)
                 longNextPress = false;
+#endif
                 x++;
                 if ((y < 0 && x >= buttons_number) || x >= KeyboardWidth) x = 0;
                 redraw = true;
@@ -662,7 +666,9 @@ String generalKeyboard(
             /* Down-Up Btns to move in Y axis */
             else if (check(PrevPress)) {
                 PrevPress = false;
+#if defined(HAS_3_BUTTONS)
                 longPrevPress = false;
+#endif
                 x--;
                 if (y < 0 && x >= buttons_number) x = buttons_number - 1;
                 else if (x < 0) x = KeyboardWidth - 1;

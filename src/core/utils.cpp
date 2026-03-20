@@ -3,6 +3,40 @@
 #include "scrollableTextArea.h"
 #include <globals.h>
 
+namespace {
+uint8_t clampTimeComponent(int value, uint8_t upperBound) {
+    if (value < 0) return 0;
+    if (value > upperBound) return upperBound;
+    return static_cast<uint8_t>(value);
+}
+
+void appendJsonEscaped(String &out, const String &value) {
+    for (size_t i = 0; i < value.length(); ++i) {
+        const char c = value[i];
+        switch (c) {
+            case '\"': out += F("\\\""); break;
+            case '\\': out += F("\\\\"); break;
+            case '\b': out += F("\\b"); break;
+            case '\f': out += F("\\f"); break;
+            case '\n': out += F("\\n"); break;
+            case '\r': out += F("\\r"); break;
+            case '\t': out += F("\\t"); break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20U) {
+                    char escaped[7];
+                    snprintf(
+                        escaped, sizeof(escaped), "\\u%04X", static_cast<unsigned>(static_cast<unsigned char>(c))
+                    );
+                    out += escaped;
+                } else {
+                    out += c;
+                }
+                break;
+        }
+    }
+}
+} // namespace
+
 /*********************************************************************
 **  Function: backToMenu
 **  sets the global var to be be used in the options second parameter
@@ -83,20 +117,22 @@ void updateClockTimezone() {
 }
 
 void updateTimeStr(struct tm timeInfo) {
+    const uint8_t hour = clampTimeComponent(timeInfo.tm_hour, 23);
+    const uint8_t minute = clampTimeComponent(timeInfo.tm_min, 59);
+    const uint8_t second = clampTimeComponent(timeInfo.tm_sec, 59);
+
     if (bruceConfig.clock24hr) {
         // Use 24 hour format
         snprintf(
-            timeStr, sizeof(timeStr), "%02d:%02d:%02d", timeInfo.tm_hour, timeInfo.tm_min, timeInfo.tm_sec
+            timeStr, sizeof(timeStr), "%02hhu:%02hhu:%02hhu", hour, minute, second
         );
     } else {
         // Use 12 hour format with AM/PM
-        int hour12 = (timeInfo.tm_hour == 0)   ? 12
-                     : (timeInfo.tm_hour > 12) ? timeInfo.tm_hour - 12
-                                               : timeInfo.tm_hour;
-        const char *ampm = (timeInfo.tm_hour < 12) ? "AM" : "PM";
+        const uint8_t hour12 = (hour == 0U) ? 12U : (hour > 12U ? static_cast<uint8_t>(hour - 12U) : hour);
+        const char *ampm = (hour < 12U) ? "AM" : "PM";
 
         snprintf(
-            timeStr, sizeof(timeStr), "%02d:%02d:%02d %s", hour12, timeInfo.tm_min, timeInfo.tm_sec, ampm
+            timeStr, sizeof(timeStr), "%02hhu:%02hhu:%02hhu %s", hour12, minute, second, ampm
         );
     }
 }
@@ -220,22 +256,41 @@ void touchHeatMap(struct TouchPoint t) {
 #endif
 
 String getOptionsJSON() {
-    String menutype = "regular_menu";
-    if (menuOptionType == 0) menutype = "main_menu";
-    else if (menuOptionType == 1) menutype = "sub_menu";
+    const char *menuType = "regular_menu";
+    if (menuOptionType == 0) menuType = "main_menu";
+    else if (menuOptionType == 1) menuType = "sub_menu";
 
-    String response = "{\"width\":" + String(tftWidth) + ", \"height\":" + String(tftHeight) +
-                      ",\"menu\":\"" + menutype + "\",\"menu_title\":\"" + menuOptionLabel +
-                      "\", \"options\":[";
-    int i = 0;
+    size_t reserveLen = 96 + menuOptionLabel.length();
+    for (const auto &opt : options) reserveLen += opt.label.length() + 24;
+
+    String response;
+    response.reserve(reserveLen);
+    response += F("{\"width\":");
+    response += tftWidth;
+    response += F(",\"height\":");
+    response += tftHeight;
+    response += F(",\"menu\":\"");
+    response += menuType;
+    response += F("\",\"menu_title\":\"");
+    appendJsonEscaped(response, menuOptionLabel);
+    response += F("\",\"options\":[");
+
     int sel = 0;
-    for (auto opt : options) {
-        response += "{\"n\":" + String(i) + ",\"label\":\"" + opt.label + "\"}";
-        if (opt.hovered) sel = i;
-        i++;
-        if (i < options.size()) response += ",";
+    for (size_t i = 0; i < options.size(); ++i) {
+        const Option &opt = options[i];
+        response += F("{\"n\":");
+        response += static_cast<unsigned int>(i);
+        response += F(",\"label\":\"");
+        appendJsonEscaped(response, opt.label);
+        response += '\"';
+        response += '}';
+
+        if (opt.hovered) sel = static_cast<int>(i);
+        if (i + 1 < options.size()) response += ',';
     }
-    response += "], \"active\":" + String(sel) + "}";
+    response += F("],\"active\":");
+    response += sel;
+    response += '}';
     return response;
 }
 
@@ -264,11 +319,12 @@ void i2c_bulk_write(TwoWire *wire, uint8_t addr, const uint8_t *bulk_data) {
 }
 
 String formatTimeDecimal(uint32_t totalMillis) {
-    uint16_t minutes = totalMillis / 60000;
-    float seconds = (totalMillis % 60000) / 1000.0;
+    const unsigned long minutes = totalMillis / 60000UL;
+    const unsigned int seconds = (totalMillis % 60000UL) / 1000UL;
+    const unsigned int millis = totalMillis % 1000UL;
 
-    char buffer[10];
-    sprintf(buffer, "%02d:%06.3f", minutes, seconds);
+    char buffer[16];
+    snprintf(buffer, sizeof(buffer), "%lu:%02u.%03u", minutes, seconds, millis);
     return String(buffer);
 }
 
@@ -284,8 +340,11 @@ void printMemoryUsage(const char *msg) {
     );
 }
 
-String repeatString(int length, String character) {
-    String result = "";
+String repeatString(int length, const String &character) {
+    if (length <= 0 || character.length() == 0) return "";
+
+    String result;
+    result.reserve(static_cast<unsigned int>(length) * character.length());
     for (int i = 0; i < length; i++) { result += character; }
     return result;
 }
